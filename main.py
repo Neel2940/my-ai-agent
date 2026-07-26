@@ -1,162 +1,220 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 import os
-import json
-import random
 import requests
 import urllib.parse
-import io
-import PyPDF2 # NEW: The PDF Reader!
-from fastapi import FastAPI, UploadFile, File # NEW: Added UploadFile and File
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from langchain_core.tools import tool
-from langchain_groq import ChatGroq
-from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
+from groq import Groq
 
-# Load environment variables from .env
-load_dotenv()
-
+# Initialize the FastAPI app
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Initialize the Groq client (requires GROQ_API_KEY environment variable on Render)
+try:
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+except Exception:
+    # Fallback for local testing if env var isn't set
+    print("Warning: GROQ_API_KEY not found in environment. Chat function may fail.")
+    client = None
 
-# --- 1. THE TOOLS ---
-
-@tool
-def generate_image(prompt: str) -> str:
-    """Use ONLY for fictional/fantasy concepts, anime/drawings, sci-fi."""
-    encoded_prompt = urllib.parse.quote(prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&model=flux&nologo=true"
-    return f"CRITICAL INSTRUCTION: Paste this exact markdown in your final response:\n\n![{prompt}]({image_url})"
-
-@tool
-def fetch_real_image(query: str) -> str:
-    """Use this to fetch REAL photographs of ANYTHING: laptops, cars, people, gadgets, places, products, etc."""
-    try:
-        clean_query = query.strip()
-        api_key = os.getenv("SERPER_API_KEY")
-        
-        if not api_key:
-            return "SERPER_API_KEY is missing from .env file."
-
-        url = "https://google.serper.dev/images"
-        payload = json.dumps({"q": clean_query})
-        headers = {
-            'X-API-KEY': api_key,
-            'Content-Type': 'application/json'
-        }
-        
-        response = requests.post(url, headers=headers, data=payload, timeout=8)
-        response_data = response.json()
-        
-        images = response_data.get("images", [])
-        
-        if images:
-            top_images = images[:10]
-            chosen_images = random.sample(top_images, min(2, len(top_images)))
-            
-            markdown_response = "SUCCESS! I found the images. YOU MUST COPY AND PASTE THESE EXACT LINKS AT THE TOP OF YOUR FINAL RESPONSE TO THE USER:\n\n"
-            for img in chosen_images:
-                markdown_response += f"![{clean_query}]({img['imageUrl']})\n\n"
-                
-            return markdown_response
-        else:
-            return f"(No images found for {clean_query})"
-
-    except Exception as e:
-        return f"(Image fetch error: {str(e)})"
-
-@tool
-def safe_web_search(query: str) -> str:
-    """Use this tool to search Google for real-time live events, breaking news, or specific current data."""
-    try:
-        api_key = os.getenv("SERPER_API_KEY")
-        if not api_key:
-            return "Serper API key missing."
-            
-        url = "https://google.serper.dev/search"
-        payload = json.dumps({"q": query})
-        headers = {
-            'X-API-KEY': api_key,
-            'Content-Type': 'application/json'
-        }
-        
-        response = requests.post(url, headers=headers, data=payload, timeout=8)
-        data = response.json()
-        
-        snippets = []
-        if "organic" in data:
-            for item in data["organic"][:4]:
-                snippets.append(f"- **{item.get('title')}**: {item.get('snippet')}")
-                
-        return "\n".join(snippets) if snippets else "No search results found."
-    except Exception as e:
-        return f"Search error: {str(e)}"
-
-
-# --- 2. THE BRAIN & INTERNAL MEMORY ---
-
-llm = ChatGroq(model="llama-3.3-70b-versatile")
-tools = [safe_web_search, generate_image, fetch_real_image]
-memory = MemorySaver()
-
-system_prompt = """You are an extraordinarily smart, highly versatile AI assistant like ChatGPT.
-
-CRITICAL RULES:
-1. ALWAYS remember what the user just asked in the previous messages.
-2. If the user asks for an image, photo, or picture, YOU MUST CALL 'fetch_real_image'.
-3. When the image tool returns links, YOU MUST PASTE THEM EXACTLY AS WRITTEN at the very top of your text output. Do not hide them!
-4. After pasting the images, write your detailed text explanation, features, and functions below them."""
-
-agent_executor = create_react_agent(llm, tools, prompt=system_prompt, checkpointer=memory)
-
-
-# --- 3. THE CONNECTIONS (Endpoints) ---
-
+# Define what the incoming chat data looks like
 class ChatRequest(BaseModel):
     message: str
 
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    try:
-        config = {"configurable": {"thread_id": "user_session_1"}}
-        response = agent_executor.invoke({"messages": [("user", request.message)]}, config=config)
-        return {"response": response["messages"][-1].content}
-    except Exception as e:
-        try:
-            fallback_response = llm.invoke(request.message)
-            return {"response": fallback_response.content}
-        except Exception:
-            return {"response": "I'm sorry, I ran into an unexpected glitch. Please try asking again!"}
+# System instructions to make Groq smart about images
+SYSTEM_PROMPT = """You are a helpful AI assistant. You have a special skill: you can generate images!
 
-# NEW: The PDF Upload Endpoint!
-@app.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
-    try:
-        # 1. Read the uploaded PDF file
-        contents = await file.read()
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
-        
-        extracted_text = ""
-        for page in pdf_reader.pages:
-            if page.extract_text():
-                extracted_text += page.extract_text() + "\n"
+If the user asks you to 'generate an image', 'draw', or 'create a picture' of something, follow these rules exactly:
+1. Don't respond with text saying you are generating the image.
+2. Formulate a good, short, descriptive prompt for the image.
+3. Your final response to the user must ONLY be this exact Markdown format: `![IMAGE](https://image.pollinations.ai/prompt/<PROMPT_TEXT>?width=1024&height=1024&nologo=true)`
+4. Replace `<PROMPT_TEXT>` in the URL with your sanitized and URL-encoded image prompt. Ensure there are no spaces or special characters in the prompt part of the URL (they must be encoded, e.g., 'a red cat' becomes 'a+red+cat' or 'a%20red%20cat').
+5. If the user just wants to chat, respond normally with text."""
+
+# Helper function to sanitize text for URLs
+def sanitize_prompt(text):
+    return urllib.parse.quote_plus(text)
+
+# 1. THE FRONTEND UI (The new clean, dark-mode ChatGPT layout)
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    # This serves the user-friendly interface directly
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>My AI Agent - Home</title>
+        <style>
+            :root {
+                --bg-color: #343541;
+                --user-msg-bg: #444654;
+                --ai-msg-bg: #343541;
+                --border-color: #565869;
+                --text-color: #ECECF1;
+                --accent-color: #19c37d;
+            }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+            header { background: var(--ai-msg-bg); padding: 15px; border-bottom: 1px solid var(--border-color); text-align: center; }
+            h1 { font-size: 1.2rem; margin: 0; }
+            #chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 20px 10px; width: 100%; max-width: 800px; margin: 0 auto; box-sizing: border-box; }
+            .message { padding: 12px; border-radius: 8px; margin-bottom: 5px; width: fit-content; max-width: 85%; }
+            .user-message { background-color: var(--user-msg-bg); align-self: flex-end; border-top-right-radius: 0; }
+            .ai-message { background-color: var(--ai-msg-bg); border: 1px solid var(--border-color); align-self: flex-start; border-top-left-radius: 0; white-space: pre-wrap; }
+            .message-label { font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; color: #a1a1aa; }
+            .user-message .message-label { text-align: right; }
+            .chat-image { max-width: 100%; height: auto; border-radius: 8px; margin-top: 10px; border: 1px solid var(--border-color); display: block; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+            #input-container { position: sticky; bottom: 0; width: 100%; background: var(--bg-color); padding: 15px 0 30px; border-top: 1px solid var(--border-color); }
+            #input-wrapper { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 800px; margin: 0 auto; padding: 0 10px; box-sizing: border-box; }
+            #userInput { width: 100%; padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); background: #40414f; color: var(--text-color); outline: none; font-size: 1rem; }
+            #userInput:focus { border-color: var(--accent-color); }
+            #sendBtn { padding: 14px 20px; margin-left: 10px; border-radius: 8px; border: none; background: var(--accent-color); color: white; font-weight: bold; cursor: pointer; transition: background 0.3s; }
+            #sendBtn:hover { background: #1a9a66; }
+            /* Custom scrollbar */
+            ::-webkit-scrollbar { width: 6px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: #565869; border-radius: 3px; }
+            ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>My AI Agent</h1>
+        </header>
+        <div id="chat-container">
+            <!-- Starting AI Message -->
+            <div class="message ai-message">
+                <div class="message-label">AI</div>
+                Hello! I am your AI assistant with image generation powers. Try asking me "Generate an image of a red cat"!
+            </div>
+        </div>
+        <div id="input-container">
+            <div id="input-wrapper">
+                <input type="text" id="userInput" placeholder="Send a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+                <button id="sendBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+        <script>
+            function addMessage(text, isUser = false) {
+                const container = document.getElementById("chat-container");
+                const messageDiv = document.createElement("div");
+                messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
                 
-        # 2. Silently feed the text into the AI's memory thread!
-        config = {"configurable": {"thread_id": "user_session_1"}}
+                const labelDiv = document.createElement("div");
+                labelDiv.className = 'message-label';
+                labelDiv.textContent = isUser ? 'You' : 'AI';
+                messageDiv.appendChild(labelDiv);
+
+                // Detect Markdown Images: ![alt](url)
+                const markdownImageRegex = /\\!\\[IMAGE\\]\\((https?:\\/\\/\\S+?)\\)/;
+                const match = text.match(markdownImageRegex);
+
+                if (match) {
+                    // It's an image response
+                    const textBeforeImage = text.replace(markdownImageRegex, '').trim();
+                    if (textBeforeImage) {
+                        const textSpan = document.createElement("span");
+                        textSpan.textContent = textBeforeImage;
+                        messageDiv.appendChild(textSpan);
+                        messageDiv.appendChild(document.createElement("br"));
+                    }
+                    const img = document.createElement("img");
+                    img.src = match[1];
+                    img.alt = "Generated Image";
+                    img.className = 'chat-image';
+                    img.onerror = () => { img.alt="Error loading image. (Often resolves itself in 10 seconds)"; }
+                    messageDiv.appendChild(img);
+                } else {
+                    // Regular text response
+                    const textSpan = document.createElement("span");
+                    textSpan.textContent = text;
+                    messageDiv.appendChild(textSpan);
+                }
+
+                container.appendChild(messageDiv);
+                container.scrollTop = container.scrollHeight;
+            }
+
+            async function sendMessage() {
+                const input = document.getElementById("userInput");
+                if (!input.value.trim()) return;
+
+                const userText = input.value;
+                addMessage(userText, true);
+                input.value = ""; // Clear input box
+
+                try {
+                    // 2. Call the new consolidated endpoint
+                    const response = await fetch("/smart_chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: userText })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.response) {
+                        addMessage(data.response);
+                    } else if (data.imageUrl) {
+                        // Special handling if a direct image URL was somehow returned
+                        addMessage(`![IMAGE](${data.imageUrl})`);
+                    } else if (data.error) {
+                        addMessage(`Error: ${data.error}`);
+                    } else {
+                        addMessage(`Unknown response: ${JSON.stringify(data)}`);
+                    }
+                } catch (error) {
+                    addMessage(`Error connecting to AI. Please ensure you added requests to your requirements.txt!`);
+                    console.error(error);
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+# 2. THE SMARTER BACKEND API (Handles Chat AND Intent Detection)
+@app.post("/smart_chat")
+async def smart_chat_endpoint(req: ChatRequest):
+    if not client:
+         raise HTTPException(status_code=500, detail="Groq client is not configured. Add GROQ_API_KEY to environment variables.")
+    
+    try:
+        # Send the user's message + System Prompt to Groq
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": req.message,
+                }
+            ],
+            # Use a fast, good model (Mistral, Llama3-8b, or Llama3-70b are best)
+            model="llama3-8b-8192", 
+            temperature=0.7,
+        )
         
-        # We tell the AI to read it and say hello!
-        prompt = f"System Instruction: The user just uploaded a document named '{file.filename}'. Here is the text inside it:\n\n{extracted_text}\n\nAcknowledge that you have received and read the document '{file.filename}', summarize what it is generally about in one sentence, and tell the user you are ready to answer questions about it."
+        # Get the AI text response
+        ai_response_text = chat_completion.choices[0].message.content
         
-        response = agent_executor.invoke({"messages": [("user", prompt)]}, config=config)
-        return {"response": response["messages"][-1].content}
-        
+        # Return the raw response. The frontend JavaScript in `addMessage` 
+        # is upgraded to automatically detect Markdown images inside this text.
+        return {"response": ai_response_text}
+
     except Exception as e:
-        return {"response": f"I couldn't read that document. Error details: {str(e)}"}
+        # Print actual error safely
+        print(f"Chat Error: {e}")
+        return {"error": str(e)}
+
+# Keep the original endpoints in case external services use them
+@app.post("/chat")
+def legacy_chat_endpoint(req: ChatRequest):
+     return {"response": "This endpoint is deprecated. Use '/smart_chat' or visit the web UI."}
+
+# Image generation endpoint is now implicitly handled via /smart_chat instructions
