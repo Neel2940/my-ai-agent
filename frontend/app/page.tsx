@@ -23,7 +23,7 @@ export default function Home() {
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
-  // Auto-scroll to the bottom when a new message arrives
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentSession.messages]);
@@ -43,7 +43,6 @@ export default function Home() {
 
     const updatedTitle = currentSession.messages.length === 0 ? userText.slice(0, 22) + '...' : currentSession.title;
 
-    // Add user message AND an empty placeholder for the AI message
     const newMessages: Message[] = [
       ...currentSession.messages,
       { sender: 'user', text: userText },
@@ -57,7 +56,6 @@ export default function Home() {
     );
 
     try {
-      // Calls your live Render backend
       const res = await fetch('https://my-ai-agent-8ckl.onrender.com/smart_chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,7 +68,6 @@ export default function Home() {
       const decoder = new TextDecoder();
       let aiFullMessage = "";
 
-      // Loop through the stream and update the UI word-by-word
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -97,26 +94,26 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-[#212121] text-gray-100 font-sans">
+    <div className="flex h-screen bg-white text-gray-800 font-sans">
       
-      {/* Sidebar */}
-      <div className="w-64 bg-[#171717] flex flex-col border-r border-gray-700 hidden md:flex">
+      {/* Sidebar - Light Theme */}
+      <div className="w-64 bg-gray-50 flex flex-col border-r border-gray-200 hidden md:flex">
         <div className="p-3">
           <button
             onClick={createNewChat}
-            className="w-full flex items-center gap-2 hover:bg-[#2f2f2f] text-sm p-3 rounded-md transition-colors"
+            className="w-full flex items-center gap-2 border border-gray-300 hover:bg-gray-200 text-gray-800 text-sm p-3 rounded-lg transition-colors font-medium shadow-sm bg-white"
           >
             <Plus size={16} /> New Chat
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-3">
-          <div className="text-xs text-gray-500 mb-3 px-2 font-semibold">Recent</div>
+          <div className="text-xs text-gray-400 mb-3 px-2 font-semibold uppercase tracking-wider">Recent</div>
           {sessions.map(session => (
             <button
               key={session.id}
               onClick={() => setCurrentSessionId(session.id)}
-              className={`w-full flex items-center gap-2 text-left p-3 text-sm rounded-md truncate transition-colors ${
-                session.id === currentSessionId ? 'bg-[#2f2f2f]' : 'hover:bg-[#212121]'
+              className={`w-full flex items-center gap-2 text-left p-3 text-sm rounded-lg truncate transition-colors ${
+                session.id === currentSessionId ? 'bg-gray-200 text-gray-900 font-medium' : 'hover:bg-gray-100 text-gray-600'
               }`}
             >
               <MessageSquare size={16} className="shrink-0" />
@@ -126,13 +123,14 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-full relative">
+      {/* Main Chat Area - Clean White Background */}
+      <div className="flex-1 flex flex-col h-full relative bg-white">
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-36">
           {currentSession.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <h2 className="text-3xl font-semibold mb-4">How can I help you today?</h2>
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">How can I help you today?</h2>
+              <p className="text-gray-500 text-sm">Ask a question, brainstorm ideas, or generate content.</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
@@ -140,8 +138,8 @@ export default function Home() {
                 <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-[15px] leading-relaxed ${
                     msg.sender === 'user' 
-                      ? 'bg-[#2f2f2f] text-white rounded-br-sm' 
-                      : 'bg-transparent text-gray-200'
+                      ? 'bg-gray-100 text-gray-900 rounded-br-sm border border-gray-200' 
+                      : 'bg-transparent text-gray-800'
                   }`}>
                     <div className="whitespace-pre-wrap">{msg.text}</div>
                   </div>
@@ -152,8 +150,8 @@ export default function Home() {
           )}
         </div>
 
-        {/* Input Box */}
-        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#212121] via-[#212121] to-transparent p-4">
+        {/* Input Box - Light Theme */}
+        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-white via-white to-transparent p-4">
           <div className="max-w-3xl mx-auto relative">
             <input
               type="text"
@@ -161,18 +159,18 @@ export default function Home() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
               placeholder="Message your AI..."
-              className="w-full bg-[#2f2f2f] text-white border border-gray-700 rounded-3xl py-4 pl-6 pr-14 focus:outline-none focus:border-gray-500 shadow-xl"
+              className="w-full bg-white text-gray-900 border border-gray-300 rounded-3xl py-4 pl-6 pr-14 focus:outline-none focus:border-gray-400 shadow-md placeholder-gray-400"
               disabled={loading}
             />
             <button
               onClick={sendMessage}
               disabled={!input.trim() || loading}
-              className="absolute right-2 top-2 p-2 bg-white text-black rounded-full hover:bg-gray-200 disabled:bg-gray-600 disabled:text-gray-400 transition-colors"
+              className="absolute right-2 top-2.5 p-2.5 bg-black text-white rounded-full hover:bg-gray-800 disabled:bg-gray-300 disabled:text-gray-500 transition-colors"
             >
               <Send size={18} />
             </button>
           </div>
-          <p className="text-center text-xs text-gray-500 mt-3">AI can make mistakes. Verify important information.</p>
+          <p className="text-center text-xs text-gray-400 mt-3">AI can make mistakes. Verify important information.</p>
         </div>
       </div>
     </div>
