@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Plus, MessageSquare } from 'lucide-react';
+import { Send, Plus, MessageSquare, Mic, Paperclip } from 'lucide-react';
 
 type Message = {
   sender: 'user' | 'ai';
@@ -19,11 +19,13 @@ export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([{ id: '1', title: 'New Chat', messages: [] }]);
   const [currentSessionId, setCurrentSessionId] = useState('1');
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentSession.messages]);
@@ -32,6 +34,42 @@ export default function Home() {
     const newSession = { id: Date.now().toString(), title: 'New Chat', messages: [] };
     setSessions([newSession, ...sessions]);
     setCurrentSessionId(newSession.id);
+  };
+
+  // --- STEP 1: Microphone Logic ---
+  const toggleListening = () => {
+    // @ts-ignore - Web Speech API
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Your browser does not support voice input.");
+      return;
+    }
+    
+    if (isListening) return; // Prevent multiple instances
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = () => setIsListening(true);
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev) => prev + (prev ? " " : "") + transcript);
+    };
+    
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.start();
+  };
+
+  // --- STEP 2: Document Upload Logic ---
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // For now, this just adds the file name to the prompt. 
+      // You can connect this to your Python PDF reader endpoint!
+      setInput((prev) => prev + ` [Attached File: ${file.name}] `);
+    }
   };
 
   const sendMessage = async () => {
@@ -123,14 +161,13 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Chat Area - Clean White Background */}
+      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full relative bg-white">
-        {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-36">
           {currentSession.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <h2 className="text-3xl font-bold text-gray-800 mb-2">How can I help you today?</h2>
-              <p className="text-gray-500 text-sm">Ask a question, brainstorm ideas, or generate content.</p>
+              <p className="text-gray-500 text-sm">Ask a question, upload a document, or use your voice.</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
@@ -150,22 +187,45 @@ export default function Home() {
           )}
         </div>
 
-        {/* Input Box - Light Theme */}
+        {/* Input Box with Mic and Upload */}
         <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-white via-white to-transparent p-4">
-          <div className="max-w-3xl mx-auto relative">
+          <div className="max-w-3xl mx-auto relative flex items-center bg-white border border-gray-300 rounded-3xl shadow-md pr-2">
+            
+            {/* Hidden File Input & Paperclip Button */}
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              className="p-3 text-gray-500 hover:text-gray-800 transition-colors rounded-full"
+              title="Upload Document"
+            >
+              <Paperclip size={20} />
+            </button>
+
+            {/* Microphone Button */}
+            <button 
+              onClick={toggleListening} 
+              className={`p-3 transition-colors rounded-full ${isListening ? 'text-red-500 animate-pulse' : 'text-gray-500 hover:text-gray-800'}`}
+              title="Use Microphone"
+            >
+              <Mic size={20} />
+            </button>
+
+            {/* Text Input */}
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
               placeholder="Message your AI..."
-              className="w-full bg-white text-gray-900 border border-gray-300 rounded-3xl py-4 pl-6 pr-14 focus:outline-none focus:border-gray-400 shadow-md placeholder-gray-400"
+              className="flex-1 bg-transparent text-gray-900 py-4 px-2 focus:outline-none placeholder-gray-400"
               disabled={loading}
             />
+            
+            {/* Send Button */}
             <button
               onClick={sendMessage}
               disabled={!input.trim() || loading}
-              className="absolute right-2 top-2.5 p-2.5 bg-black text-white rounded-full hover:bg-gray-800 disabled:bg-gray-300 disabled:text-gray-500 transition-colors"
+              className="p-2.5 m-1 bg-black text-white rounded-full hover:bg-gray-800 disabled:bg-gray-300 disabled:text-gray-500 transition-colors"
             >
               <Send size={18} />
             </button>
