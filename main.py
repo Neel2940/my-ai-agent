@@ -44,7 +44,7 @@ async def smart_chat(req: ChatRequest):
     # 2. General AI Chat Request (Streaming)
     try:
         completion = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "You are a helpful AI assistant like ChatGPT. Answer questions thoroughly and clearly."},
                 {"role": "user", "content": user_msg}
