@@ -50,21 +50,30 @@ export default function Home() {
 
     const userText = input;
     setInput('');
-    setMessages((prev) => [...prev, { sender: 'user', text: userText }]);
+    
+    // Create updated messages list including user's new prompt
+    const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
+    setMessages(updatedMessages);
     setLoading(true);
 
     try {
+      // Add empty AI placeholder message
       setMessages((prev) => [...prev, { sender: 'ai', text: '' }]);
+
+      // Format complete chat history into API roles
+      const formattedHistory = updatedMessages.map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
 
       const res = await fetch('https://my-ai-agent-8ckl.onrender.com/smart_chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText }),
+        body: JSON.stringify({ messages: formattedHistory }),
       });
 
       if (!res.ok) throw new Error(`Server Error (${res.status})`);
       
-      // Read standard JSON instead of a stream
       const data = await res.json();
 
       setMessages((prev) => {
@@ -112,7 +121,7 @@ export default function Home() {
                 {msg.sender === 'ai' && msg.text === '' && loading ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'pulse 1.5s infinite' }}>
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z" /><path d="M12 12 2.1 7.1" /><path d="m12 12 9.9 4.9" /></svg>
-                    <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Generating perfect responses...</span>
+                    <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                   </div>
                 ) : (
                   msg.text.includes('![IMAGE](') ? (
