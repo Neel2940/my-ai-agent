@@ -74,23 +74,25 @@ export default function Home() {
   };
 
   return (
-    <div style={{ backgroundColor: '#1e1e2e', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif' }}>
-      <header style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-        <h2>My AI Agent</h2>
+    <div style={{ backgroundColor: '#ffffff', color: '#202123', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif' }}>
+      <header style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px solid #e5e5e5', paddingBottom: '10px' }}>
+        <h2 style={{ color: '#202123', margin: 0 }}>My AI Agent</h2>
       </header>
 
-      <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '15px', minHeight: '60vh' }}>
+      <div style={{ maxWidth: '750px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '15px', minHeight: '65vh' }}>
         {messages.map((msg, index) => (
           <div
             key={index}
             style={{
               alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-              backgroundColor: msg.sender === 'user' ? '#89b4fa' : '#313244',
-              color: msg.sender === 'user' ? '#11111b' : '#cdd6f4',
-              padding: '12px 16px',
+              backgroundColor: msg.sender === 'user' ? '#10a37f' : '#f7f7f8',
+              color: msg.sender === 'user' ? '#ffffff' : '#202123',
+              border: msg.sender === 'ai' ? '1px solid #e5e5e5' : 'none',
+              padding: '14px 18px',
               borderRadius: '12px',
-              maxWidth: '80%',
+              maxWidth: '85%',
               whiteSpace: 'pre-wrap',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
             }}
           >
             <strong>{msg.sender === 'user' ? 'You: ' : 'AI: '}</strong>
@@ -102,7 +104,7 @@ export default function Home() {
                 <img
                   src={msg.text.split('![IMAGE](')[1]?.replace(')', '')}
                   alt="Generated AI"
-                  style={{ maxWidth: '100%', borderRadius: '8px', marginTop: '10px' }}
+                  style={{ maxWidth: '100%', borderRadius: '8px', marginTop: '10px', border: '1px solid #e5e5e5' }}
                 />
               </div>
             ) : (
@@ -112,7 +114,7 @@ export default function Home() {
         ))}
       </div>
 
-      <div style={{ maxWidth: '700px', margin: '20px auto 0', display: 'flex', gap: '10px' }}>
+      <div style={{ maxWidth: '750px', margin: '20px auto 0', display: 'flex', gap: '10px' }}>
         <input
           type="text"
           value={input}
@@ -121,24 +123,27 @@ export default function Home() {
           placeholder="Ask a question or generate an image..."
           style={{
             flex: 1,
-            padding: '12px',
+            padding: '14px',
             borderRadius: '8px',
-            border: '1px solid #45475a',
-            backgroundColor: '#313244',
-            color: '#fff',
+            border: '1px solid #d9d9e3',
+            backgroundColor: '#ffffff',
+            color: '#202123',
             outline: 'none',
+            fontSize: '1rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
           }}
         />
         <button
           onClick={sendMessage}
           disabled={loading}
           style={{
-            padding: '12px 20px',
+            padding: '14px 24px',
             borderRadius: '8px',
             border: 'none',
-            backgroundColor: '#a6e3a1',
-            color: '#11111b',
+            backgroundColor: '#10a37f',
+            color: '#ffffff',
             fontWeight: 'bold',
+            fontSize: '1rem',
             cursor: 'pointer',
           }}
         >
