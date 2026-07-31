@@ -32,20 +32,26 @@ def smart_chat(req: ChatRequest):
     # ---------------------------------------------------------
     if any(keyword in user_msg_lower for keyword in ["generate", "draw", "create", "paint"]):
         prompt_encoded = urllib.parse.quote_plus(user_msg)
-        img_markdown = f"![AI Image](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
+        # Using exactly ![IMAGE]( so the frontend detects it
+        img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
         return {"response": f"Here is your generated AI image:\n\n{img_markdown}"}
 
     # ---------------------------------------------------------
     # BRAIN 2: REAL WEB SEARCH (For "Image of" or "Picture of")
     # ---------------------------------------------------------
     elif any(keyword in user_msg_lower for keyword in ["image of", "picture of", "photo of", "show me"]):
-        # Clean up the prompt to find exactly who the user is asking for
-        clean_search = user_msg_lower.replace("give me", "").replace("the image of", "").replace("a picture of", "").strip()
+        clean_search = user_msg_lower
+        # Advanced cleaner to strip out all conversational words
+        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "a photo of"]
+        for phrase in remove_phrases:
+            clean_search = clean_search.replace(phrase, "")
+        
+        clean_search = clean_search.strip()
         query_encoded = urllib.parse.quote_plus(clean_search)
         
-        # This uses a free Bing Web Image trick to pull real photos instantly!
+        # Pulls real thumbnail image from Bing and uses exactly ![IMAGE](
         real_img_url = f"https://tse1.mm.bing.net/th?q={query_encoded}"
-        return {"response": f"Here is a real picture of {clean_search}:\n\n![Real Image]({real_img_url})"}
+        return {"response": f"Here is a real picture of {clean_search}:\n\n![IMAGE]({real_img_url})"}
 
     # ---------------------------------------------------------
     # BRAIN 3: NORMAL CHATGPT TEXT (For everything else)
