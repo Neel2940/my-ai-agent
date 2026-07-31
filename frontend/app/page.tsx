@@ -77,7 +77,12 @@ export default function Home() {
         body: JSON.stringify({ message: userText }),
       });
 
-      if (!res.ok) throw new Error(`Server status: ${res.status}`);
+      // Advanced Error Catching: Read exact error from backend
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Server Error (${res.status}): ${errorText}`);
+      }
+      
       if (!res.body) throw new Error('No response body from server.');
 
       const reader = res.body.getReader();
@@ -101,12 +106,19 @@ export default function Home() {
           return updated;
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setMessages((prev) => [
-        ...prev,
-        { sender: 'ai', text: 'Error connecting to AI backend. Please ensure Render server is awake.' },
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (updated[lastIdx] && updated[lastIdx].sender === 'ai') {
+          updated[lastIdx] = {
+            ...updated[lastIdx],
+            text: `⚠️ ERROR: ${error.message}\n\n(Tip: Did you add your GROQ_API_KEY to Render's Environment Variables?)`,
+          };
+        }
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
@@ -114,6 +126,15 @@ export default function Home() {
 
   return (
     <div style={{ backgroundColor: '#ffffff', color: '#0d0d0d', minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* Add CSS Animation for the loading state */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
+
       {/* Header */}
       <header style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <h1 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0d0d0d', margin: 0 }}>My AI Agent</h1>
@@ -152,18 +173,33 @@ export default function Home() {
                   boxShadow: msg.sender === 'ai' ? '0 2px 6px rgba(0,0,0,0.03)' : 'none',
                 }}
               >
-                {/* Render Markdown Image if generated */}
-                {msg.text.includes('![IMAGE](') ? (
-                  <div>
-                    <p style={{ margin: '0 0 10px 0' }}>{msg.text.split('![IMAGE](')[0]}</p>
-                    <img
-                      src={msg.text.split('![IMAGE](')[1]?.replace(')', '')}
-                      alt="Generated AI"
-                      style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5' }}
-                    />
+                
+                {/* NEW FEATURE: Loading State with Logo & Text */}
+                {msg.sender === 'ai' && msg.text === '' && loading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'pulse 1.5s infinite' }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
+                      <path d="M12 12 2.1 7.1" />
+                      <path d="m12 12 9.9 4.9" />
+                    </svg>
+                    <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>
+                      Generating perfect responses...
+                    </span>
                   </div>
                 ) : (
-                  msg.text || (loading && index === messages.length - 1 ? '...' : '')
+                  /* Render normal text or image */
+                  msg.text.includes('![IMAGE](') ? (
+                    <div>
+                      <p style={{ margin: '0 0 10px 0' }}>{msg.text.split('![IMAGE](')[0]}</p>
+                      <img
+                        src={msg.text.split('![IMAGE](')[1]?.replace(')', '')}
+                        alt="Generated AI"
+                        style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5' }}
+                      />
+                    </div>
+                  ) : (
+                    msg.text
+                  )
                 )}
               </div>
             </div>
