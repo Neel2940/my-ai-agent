@@ -4,11 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from groq import Groq
+from groq import AsyncGroq  # <-- Upgraded to ASYNC Groq
 
 app = FastAPI()
 
-# Allow Vercel to communicate securely
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +28,7 @@ async def smart_chat(req: ChatRequest):
     user_msg = req.message.strip()
     user_msg_lower = user_msg.lower()
 
-    # 1. Image Generation (Crash-Proof)
+    # 1. Image Generation (Async)
     if any(keyword in user_msg_lower for keyword in ["image", "draw", "picture", "photo", "generate"]):
         prompt_encoded = urllib.parse.quote_plus(user_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
@@ -43,30 +42,32 @@ async def smart_chat(req: ChatRequest):
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         async def key_error_stream():
-            yield "⚠️ ERROR: Your GROQ_API_KEY is missing on Render. Please check your Environment Variables.".encode("utf-8")
+            yield "⚠️ ERROR: Your GROQ_API_KEY is missing on Render.".encode("utf-8")
         return StreamingResponse(key_error_stream(), media_type="text/plain")
 
-    # 3. AI Text Chat (Crash-Proof Streaming)
+    # 3. AI Text Chat (Fully Async Streaming)
     try:
-        client = Groq(api_key=api_key)
-        completion = client.chat.completions.create(
+        # Initialize the Async client
+        client = AsyncGroq(api_key=api_key)
+        
+        # Use 'await' so it doesn't freeze the server
+        completion = await client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a helpful AI assistant like ChatGPT. Answer questions thoroughly and clearly."},
+                {"role": "system", "content": "You are a helpful AI assistant like ChatGPT."},
                 {"role": "user", "content": user_msg}
             ],
             temperature=0.7,
             stream=True
         )
 
-        def generate_chunks():
+        async def generate_chunks():
             try:
-                for chunk in completion:
-                    # Safely extract text chunks
+                # Use 'async for' to read the stream without blocking
+                async for chunk in completion:
                     if chunk.choices and len(chunk.choices) > 0:
                         content = chunk.choices[0].delta.content
                         if content:
-                            # Encode as bytes to prevent frontend freezing
                             yield content.encode("utf-8")
             except Exception as stream_err:
                 yield f"\n\n[Stream Error: {str(stream_err)}]".encode("utf-8")
@@ -74,7 +75,6 @@ async def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_chunks(), media_type="text/plain")
 
     except Exception as e:
-        # If Groq crashes, send the exact error text to the chat window
         async def crash_stream():
             yield f"⚠️ API ERROR: {str(e)}".encode("utf-8")
         return StreamingResponse(crash_stream(), media_type="text/plain")
