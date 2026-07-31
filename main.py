@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
-from duckduckgo_search import DDGS # New live search tool!
+from duckduckgo_search import DDGS
 
 app = FastAPI()
 
@@ -29,46 +29,54 @@ def smart_chat(req: ChatRequest):
     user_msg_lower = user_msg.lower()
     
     api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
 
     # ---------------------------------------------------------
-    # BRAIN 1: AI IMAGE GENERATOR
+    # BRAIN 1: AI ART GENERATOR (Only for "generate", "draw", "paint")
     # ---------------------------------------------------------
-    if any(keyword in user_msg_lower for keyword in ["generate", "draw", "create", "paint"]):
+    if any(keyword in user_msg_lower for keyword in ["generate", "draw", "create", "paint", "artwork", "illustration"]):
         prompt_encoded = urllib.parse.quote_plus(user_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
         return {"response": f"Here is your generated AI image:\n\n{img_markdown}"}
 
     # ---------------------------------------------------------
-    # BRAIN 2: REAL WEB PHOTOS
+    # BRAIN 2: REAL WEB PHOTOS (Catches ANY prompt containing image/photo/pic/picture)
     # ---------------------------------------------------------
-    elif any(keyword in user_msg_lower for keyword in ["image of", "picture of", "photo of", "show me"]):
+    elif any(keyword in user_msg_lower for keyword in ["image", "picture", "photo", "pic", "img", "show me"]):
         clean_search = user_msg_lower
-        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "a photo of"]
+        
+        # Strip out conversational phrases to leave only the core subject
+        remove_phrases = [
+            "give me an", "give me a", "give me", "show me an", "show me a", "show me", 
+            "an image of", "the image of", "a picture of", "picture of", "image of", 
+            "photo of", "a photo of", "image in", "picture in", "photo in", 
+            "image", "picture", "photo", "pic", "img"
+        ]
         for phrase in remove_phrases:
             clean_search = clean_search.replace(phrase, "")
         
         clean_search = clean_search.strip()
+        if not clean_search:
+            clean_search = user_msg_lower
+
         query_encoded = urllib.parse.quote_plus(clean_search)
         real_img_url = f"https://tse1.mm.bing.net/th?q={query_encoded}"
         return {"response": f"Here is a real picture of {clean_search}:\n\n![IMAGE]({real_img_url})"}
 
     # ---------------------------------------------------------
-    # BRAIN 3: LIVE WEB SEARCH (For real-time data)
+    # BRAIN 3: LIVE WEB SEARCH (For real-time queries)
     # ---------------------------------------------------------
-    elif any(keyword in user_msg_lower for keyword in ["search the web", "latest news", "real time", "current roster"]):
+    elif any(keyword in user_msg_lower for keyword in ["search the web", "latest news", "real time", "current", "today", "who won", "score"]):
+        if not api_key:
+            return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
         try:
-            # 1. Ask DuckDuckGo for the top 3 live internet results
             results = DDGS().text(user_msg, max_results=3)
             live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
             
-            # 2. Feed that live info into the AI so it can read it
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": f"You are a helpful AI. Answer the user's question using ONLY this live internet data:\n\n{live_info}"},
+                    {"role": "system", "content": f"You are a helpful AI assistant. Answer the user's question accurately using this live web search data:\n\n{live_info}"},
                     {"role": "user", "content": user_msg}
                 ],
                 temperature=0.5
@@ -78,15 +86,17 @@ def smart_chat(req: ChatRequest):
             return {"response": f"⚠️ Live Search Error: {str(e)}"}
 
     # ---------------------------------------------------------
-    # BRAIN 4: NORMAL CHATGPT TEXT (For standard questions)
+    # BRAIN 4: STANDARD CHATGPT TEXT (Everything else)
     # ---------------------------------------------------------
     else:
+        if not api_key:
+            return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "You are a highly intelligent AI assistant."},
+                    {"role": "system", "content": "You are a highly intelligent AI assistant like ChatGPT."},
                     {"role": "user", "content": user_msg}
                 ],
                 temperature=0.7
