@@ -65,7 +65,7 @@ def smart_chat(req: ChatRequest):
     elif is_image_request:
         search_query = latest_msg
         
-        # If the user prompt is contextual (e.g. "sad pose" or "i want image"), use Groq to resolve full search query
+        # If the user prompt is contextual, use Groq to resolve full search query
         if client and (len(latest_msg.split()) < 4 or "i want image" in latest_msg_lower or prev_was_image):
             try:
                 refinement = client.chat.completions.create(
@@ -91,9 +91,12 @@ def smart_chat(req: ChatRequest):
         return {"response": f"Here is a real picture of {clean_search}:\n\n![IMAGE]({real_img_url})"}
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (For real-time queries)
+    # ROUTE 3: LIVE WEB SEARCH (For real-time queries & squads)
     # ---------------------------------------------------------
-    elif any(keyword in latest_msg_lower for keyword in ["search the web", "latest news", "real time", "current", "today"]):
+    elif any(keyword in latest_msg_lower for keyword in [
+        "search the web", "latest news", "real time", "current", "today", 
+        "squad", "roster", "who won", "score", "price of", "2024", "2025", "2026", "now"
+    ]):
         if not client:
             return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
         try:
@@ -103,7 +106,7 @@ def smart_chat(req: ChatRequest):
             completion = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": f"You are a helpful AI assistant. Answer using this live search data:\n\n{live_info}"}
+                    {"role": "system", "content": f"You are a helpful AI assistant. Answer using ONLY this live, up-to-date search data:\n\n{live_info}"}
                 ] + history,
                 temperature=0.5
             )
