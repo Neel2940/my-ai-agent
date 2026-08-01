@@ -43,7 +43,7 @@ def smart_chat(req: ChatRequest):
     # Check if previous response was an image
     prev_was_image = False
     if len(history) >= 2:
-        prev_was_image = "![IMAGE]" in history[-2]["content"] or "Here is a real picture" in history[-2]["content"]
+        prev_was_image = "![IMAGE]" in history[-2]["content"] or "Here is a real picture" in history[-2]["content"] or "Here are your pictures" in history[-2]["content"]
 
     # Detect if user wants an image (explicitly or via contextual follow-up)
     image_keywords = ["image", "photo", "picture", "pic", "img", "generate", "draw", "create", "paint", "show me"]
@@ -60,32 +60,53 @@ def smart_chat(req: ChatRequest):
         return {"response": f"Here is your generated AI image:\n\n{img_markdown}"}
 
     # ---------------------------------------------------------
-    # ROUTE 2: REAL WEB PHOTOS (Handles multi-turn image queries)
+    # ROUTE 2: REAL WEB PHOTOS (Now supports multiple images!)
     # ---------------------------------------------------------
     elif is_image_request:
         search_query = latest_msg
         
-        # If the user prompt is contextual, use Groq to resolve full search query
-        if client and (len(latest_msg.split()) < 4 or "i want image" in latest_msg_lower or prev_was_image):
+        # Determine how many images the user wants
+        num_images = 1
+        if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
+        elif any(w in latest_msg_lower for w in ["three", "3"]): num_images = 3
+        elif any(w in latest_msg_lower for w in ["four", "4"]): num_images = 4
+        elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more"]): num_images = 3
+        
+        # Strict keyword extraction to bypass AI safety refusals
+        if client and (len(latest_msg.split()) < 8 or prev_was_image):
             try:
                 refinement = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=history + [
-                        {"role": "system", "content": "Extract ONLY a 2 to 5 word search term for Bing image search based on this conversation. Respond ONLY with the search term."}
+                        {"role": "system", "content": "You are a strict search term extractor. The user wants to see a photo. Output ONLY the exact name of the person or thing they want to see (1 to 5 words). DO NOT write sentences. DO NOT write safety refusals like 'I cannot provide'."}
                     ],
-                    temperature=0.2
+                    temperature=0.1
                 )
-                search_query = refinement.choices[0].message.content.strip()
+                extracted = refinement.choices[0].message.content.strip()
+                # Double check the AI didn't still output a refusal
+                if "sorry" not in extracted.lower() and "provide" not in extracted.lower() and "cannot" not in extracted.lower():
+                    search_query = extracted
             except Exception:
                 pass
 
-        # Clean common filler phrases
-        remove_phrases = ["give me an", "give me a", "give me", "show me an", "show me a", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "image in", "i want image", "image", "photo", "picture"]
+        # Clean conversational filler phrases out of the search query
+        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "images of", "pictures of", "i want", "some", "few", "more", "two", "three", "four", "five", "1", "2", "3", "4", "5", "image", "photo", "picture", "images", "pics"]
         clean_search = search_query.lower()
         for phrase in remove_phrases:
             clean_search = clean_search.replace(phrase, "")
         clean_search = clean_search.strip() or search_query
 
+        # Use DuckDuckGo to grab multiple high-quality real images!
+        try:
+            results = DDGS().images(clean_search, max_results=num_images)
+            if results and len(results) > 0:
+                img_markdowns = [f"![IMAGE]({res['image']})" for res in results]
+                combined_images = "\n\n".join(img_markdowns)
+                return {"response": f"Here are your pictures of {clean_search}:\n\n{combined_images}"}
+        except Exception:
+            pass # If DDG fails, it will fall down to the Bing fallback below
+            
+        # Fallback to single Bing Image if DuckDuckGo gets blocked
         query_encoded = urllib.parse.quote_plus(clean_search)
         real_img_url = f"https://tse1.mm.bing.net/th?q={query_encoded}"
         return {"response": f"Here is a real picture of {clean_search}:\n\n![IMAGE]({real_img_url})"}
