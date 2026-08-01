@@ -1,6 +1,7 @@
 import os
 import urllib.parse
 import random
+import re  # NEW: Used to scan chat history for old image links
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -40,6 +41,15 @@ def smart_chat(req: ChatRequest):
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
 
+    # 🚀 NEW: VISUAL MEMORY - Scan history for already shown images
+    seen_image_urls = set()
+    for msg in history:
+        if msg["role"] == "assistant":
+            # Extracts the raw URL from any ![IMAGE](url) tag
+            urls = re.findall(r'!\[IMAGE\]\((.*?)\)', msg["content"])
+            for url in urls:
+                seen_image_urls.add(url)
+
     prev_was_image = False
     if len(history) >= 2:
         prev_was_image = "![IMAGE]" in history[-2]["content"] or "Here is a real picture" in history[-2]["content"] or "Here are your pictures" in history[-2]["content"]
@@ -49,11 +59,17 @@ def smart_chat(req: ChatRequest):
         prev_was_image and not any(k in latest_msg_lower for k in ["explain", "who is", "what is", "tell me", "why"])
     )
 
+    # ---------------------------------------------------------
+    # ROUTE 1: AI ART GENERATION
+    # ---------------------------------------------------------
     if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]):
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
         return {"response": f"Here is your generated AI image:\n\n{img_markdown}"}
 
+    # ---------------------------------------------------------
+    # ROUTE 2: REAL WEB PHOTOS (WITH STRICT DUPLICATE PREVENTION)
+    # ---------------------------------------------------------
     elif is_image_request:
         search_query = latest_msg
         
@@ -78,7 +94,7 @@ def smart_chat(req: ChatRequest):
             except Exception:
                 pass
 
-        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "images of", "pictures of", "i want", "some", "few", "more", "two", "three", "four", "five", "1", "2", "3", "4", "5", "image", "photo", "picture", "images", "pics", "another", "different"]
+        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "images of", "pictures of", "i want", "some", "few", "more", "two", "three", "four", "five", "1", "2", "3", "4", "5", "image", "photo", "picture", "images", "pics", "another", "different", "new"]
         clean_search = search_query.lower()
         for phrase in remove_phrases:
             clean_search = clean_search.replace(phrase, "")
@@ -86,32 +102,48 @@ def smart_chat(req: ChatRequest):
 
         combined_images = ""
         try:
-            # 🚀 NEW: Grab 15 images and shuffle them to guarantee variety!
-            results = DDGS().images(clean_search, max_results=15)
-            if results and len(results) >= num_images:
-                random.shuffle(results)
-                img_markdowns = [f"![IMAGE]({res['image']})" for res in results[:num_images]]
-                combined_images = "\n\n".join(img_markdowns)
+            # 🚀 Pull 50 images instead of 15!
+            results = DDGS().images(clean_search, max_results=50)
+            if results:
+                # 🚀 Filter out any image that is on the Banned List (seen_image_urls)
+                fresh_images = [res for res in results if res['image'] not in seen_image_urls]
+                
+                if len(fresh_images) >= num_images:
+                    random.shuffle(fresh_images)
+                    img_markdowns = [f"![IMAGE]({res['image']})" for res in fresh_images[:num_images]]
+                    combined_images = "\n\n".join(img_markdowns)
         except Exception:
             pass 
             
+        # 🚀 Fallback to Bing, also checking the Banned List!
         if not combined_images:
             img_markdowns = []
-            # 🚀 NEW: Shuffled Bing trick keywords for total randomness
-            modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling"]
+            modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling", " latest", " news", " celebration", " 2026", " profile"]
             random.shuffle(modifiers)
             
-            for i in range(num_images):
-                modified_query = clean_search + modifiers[i % len(modifiers)]
+            added = 0
+            for mod in modifiers:
+                if added >= num_images:
+                    break
+                
+                modified_query = clean_search + mod
                 query_encoded = urllib.parse.quote_plus(modified_query)
-                cdn = (i % 4) + 1 
+                cdn = (added % 4) + 1 
                 img_url = f"https://tse{cdn}.mm.bing.net/th?q={query_encoded}"
-                img_markdowns.append(f"![IMAGE]({img_url})")
+                
+                # Check if Bing is trying to give us a duplicate
+                if img_url not in seen_image_urls:
+                    img_markdowns.append(f"![IMAGE]({img_url})")
+                    seen_image_urls.add(img_url) # Add to memory so it doesn't duplicate within the same batch
+                    added += 1
             
             combined_images = "\n\n".join(img_markdowns)
 
-        return {"response": f"Here are your pictures of {clean_search}:\n\n{combined_images}"}
+        return {"response": f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"}
 
+    # ---------------------------------------------------------
+    # ROUTE 3: LIVE WEB SEARCH
+    # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search the web", "latest news", "real time", "current", "today", 
         "squad", "roster", "who won", "score", "price of", "2024", "2025", "2026", "now"
@@ -133,6 +165,9 @@ def smart_chat(req: ChatRequest):
         except Exception as e:
             return {"response": f"⚠️ Live Search Error: {str(e)}"}
 
+    # ---------------------------------------------------------
+    # ROUTE 4: STANDARD CHATGPT TEXT
+    # ---------------------------------------------------------
     else:
         if not client:
             return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
