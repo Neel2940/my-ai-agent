@@ -1,5 +1,6 @@
 import os
 import urllib.parse
+import random
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -45,7 +46,7 @@ def smart_chat(req: ChatRequest):
 
     image_keywords = ["image", "photo", "picture", "pic", "img", "generate", "draw", "create", "paint", "show me"]
     is_image_request = any(k in latest_msg_lower for k in image_keywords) or (
-        prev_was_image and not any(k in latest_msg_lower for k in ["explain", "who is", "what is", "tell me"])
+        prev_was_image and not any(k in latest_msg_lower for k in ["explain", "who is", "what is", "tell me", "why"])
     )
 
     if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]):
@@ -60,14 +61,14 @@ def smart_chat(req: ChatRequest):
         if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
         elif any(w in latest_msg_lower for w in ["three", "3"]): num_images = 3
         elif any(w in latest_msg_lower for w in ["four", "4"]): num_images = 4
-        elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more", "multiple"]): num_images = 3
+        elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more", "multiple", "another"]): num_images = 3
         
         if client and (len(latest_msg.split()) < 8 or prev_was_image):
             try:
                 refinement = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=history + [
-                        {"role": "system", "content": "You are a strict search term extractor. The user wants to see a photo. Output ONLY the exact name of the person or thing they want to see (1 to 5 words). DO NOT write sentences. DO NOT write safety refusals like 'I cannot provide'."}
+                        {"role": "system", "content": "You are a strict search term extractor. Output ONLY the exact name of the person or thing the user wants to see (1 to 5 words). DO NOT write sentences. Ignore words like 'more', 'another', or 'different'."}
                     ],
                     temperature=0.1
                 )
@@ -77,7 +78,7 @@ def smart_chat(req: ChatRequest):
             except Exception:
                 pass
 
-        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "images of", "pictures of", "i want", "some", "few", "more", "two", "three", "four", "five", "1", "2", "3", "4", "5", "image", "photo", "picture", "images", "pics"]
+        remove_phrases = ["give me", "show me", "an image of", "the image of", "a picture of", "picture of", "image of", "photo of", "images of", "pictures of", "i want", "some", "few", "more", "two", "three", "four", "five", "1", "2", "3", "4", "5", "image", "photo", "picture", "images", "pics", "another", "different"]
         clean_search = search_query.lower()
         for phrase in remove_phrases:
             clean_search = clean_search.replace(phrase, "")
@@ -85,22 +86,24 @@ def smart_chat(req: ChatRequest):
 
         combined_images = ""
         try:
-            results = DDGS().images(clean_search, max_results=num_images)
+            # 🚀 NEW: Grab 15 images and shuffle them to guarantee variety!
+            results = DDGS().images(clean_search, max_results=15)
             if results and len(results) >= num_images:
+                random.shuffle(results)
                 img_markdowns = [f"![IMAGE]({res['image']})" for res in results[:num_images]]
                 combined_images = "\n\n".join(img_markdowns)
         except Exception:
             pass 
             
-        # 🚀 BULLETPROOF FALLBACK: Tricking Bing into giving multiple images if DDG gets blocked
         if not combined_images:
             img_markdowns = []
-            # Secretly adds keywords to trick Bing into pulling totally different photos!
-            modifiers = ["", " portrait", " high quality", " close up", " photography"]
+            # 🚀 NEW: Shuffled Bing trick keywords for total randomness
+            modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling"]
+            random.shuffle(modifiers)
+            
             for i in range(num_images):
                 modified_query = clean_search + modifiers[i % len(modifiers)]
                 query_encoded = urllib.parse.quote_plus(modified_query)
-                # Cycles through Bing's different image servers to prevent getting blocked
                 cdn = (i % 4) + 1 
                 img_url = f"https://tse{cdn}.mm.bing.net/th?q={query_encoded}"
                 img_markdowns.append(f"![IMAGE]({img_url})")
