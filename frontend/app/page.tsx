@@ -26,7 +26,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load sessions from localStorage on startup
   useEffect(() => {
     const saved = localStorage.getItem('my_ai_agent_sessions');
     if (saved) {
@@ -41,18 +40,15 @@ export default function Home() {
         console.error('Failed to parse saved sessions', e);
       }
     }
-    // Create default session if none exist
     createNewChat();
   }, []);
 
-  // Save sessions to localStorage whenever they update
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem('my_ai_agent_sessions', JSON.stringify(sessions));
     }
   }, [sessions]);
 
-  // Scroll to bottom on new message
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
 
@@ -117,10 +113,8 @@ export default function Home() {
     const userText = input;
     setInput('');
 
-    // Determine updated messages for this session
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
 
-    // Auto-generate title if this is the first message
     let updatedTitle = currentSession?.title || 'New Chat';
     if (messages.length === 0) {
       updatedTitle = userText.length > 24 ? userText.substring(0, 24) + '...' : userText;
@@ -136,7 +130,6 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // Add empty AI response placeholder
       setSessions((prev) =>
         prev.map((s) =>
           s.id === currentSessionId
@@ -199,7 +192,6 @@ export default function Home() {
         .recent-row:hover .delete-btn { opacity: 1; }
       `}</style>
 
-      {/* BACKDROP OVERLAY FOR MOBILE */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -207,7 +199,6 @@ export default function Home() {
         />
       )}
 
-      {/* CHATGPT SIDEBAR DRAWER */}
       <aside
         style={{
           position: 'fixed',
@@ -225,7 +216,6 @@ export default function Home() {
           boxSizing: 'border-box',
         }}
       >
-        {/* SIDEBAR HEADER */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0d0d0d' }}>ChatGPT</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -246,7 +236,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* NAVIGATION SECTION */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '20px' }}>
           <div
             onClick={() => { setActiveTab('library'); alert('Library Section'); }}
@@ -282,7 +271,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* RECENTS CHAT LIST */}
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#888', marginBottom: '8px', paddingLeft: '8px', textTransform: 'uppercase' }}>
             Recents
@@ -324,8 +312,7 @@ export default function Home() {
           ))}
         </div>
 
-        {/* FOOTER ACTIONS (+ CHAT BUTTON & PROFILE) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: '12px', borderTop: '1px solid #e5e5e5' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: '1px solid #e5e5e5' }}>
           <button
             onClick={createNewChat}
             style={{
@@ -353,9 +340,7 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
-        {/* HEADER BAR */}
         <header style={{ padding: '12px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -376,7 +361,6 @@ export default function Home() {
           </button>
         </header>
 
-        {/* MESSAGES THREAD */}
         <div style={{ flex: 1, maxWidth: '768px', width: '100%', margin: '0 auto', padding: '24px 16px 120px 16px', boxSizing: 'border-box' }}>
           {messages.length === 0 ? (
             <div style={{ textAlign: 'center', marginTop: '18vh', color: '#666' }}>
@@ -406,7 +390,6 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* FLOATING INPUT BAR */}
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', padding: '12px 16px 24px 16px' }}>
           <div style={{ maxWidth: '768px', margin: '0 auto', display: 'flex', alignItems: 'center', backgroundColor: '#f4f4f4', borderRadius: '28px', padding: '8px 12px 8px 16px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid #e5e5e5' }}>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
