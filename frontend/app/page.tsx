@@ -112,7 +112,7 @@ export default function Home() {
 
     const userText = input;
     setInput('');
-    setActiveTab('chat'); // Auto-switch back to chat if they type from another tab
+    setActiveTab('chat'); 
 
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
 
@@ -275,7 +275,7 @@ export default function Home() {
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
-        {/* STICKY HEADER - Fixes the scrolling issue! */}
+        {/* STICKY HEADER */}
         <header style={{ position: 'sticky', top: 0, zIndex: 30, backgroundColor: '#ffffff', padding: '12px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#333' }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -288,7 +288,7 @@ export default function Home() {
           </button>
         </header>
 
-        {/* DYNAMIC CONTENT AREA - Swaps between Chat, Projects, etc. */}
+        {/* DYNAMIC CONTENT AREA */}
         <div style={{ flex: 1, maxWidth: '768px', width: '100%', margin: '0 auto', padding: '24px 16px 120px 16px', boxSizing: 'border-box' }}>
           
           {/* CHAT TAB */}
@@ -307,12 +307,22 @@ export default function Home() {
                         <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                       </div>
                     ) : (
-                      msg.text.includes('![IMAGE](') ? (
-                        <div>
-                          <p style={{ margin: '0 0 10px 0' }}>{msg.text.split('![IMAGE](')[0]}</p>
-                          <img src={msg.text.split('![IMAGE](')[1]?.replace(')', '')} alt="Generated AI" style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5' }} />
-                        </div>
-                      ) : (msg.text)
+                      // UPGRADED MULTI-IMAGE PARSER HERE
+                      <div>
+                        {msg.text.split('![IMAGE](').map((part, partIndex) => {
+                          if (partIndex === 0) {
+                            return <span key={partIndex} style={{ display: 'block', marginBottom: '10px' }}>{part}</span>;
+                          }
+                          const url = part.split(')')[0];
+                          const remainingText = part.substring(url.length + 1);
+                          return (
+                            <div key={partIndex} style={{ marginBottom: '10px' }}>
+                              <img src={url} alt="Generated AI" style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5', display: 'block' }} />
+                              {remainingText && <span style={{ display: 'block', marginTop: '10px' }}>{remainingText}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>
