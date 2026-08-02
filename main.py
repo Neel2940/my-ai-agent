@@ -2,6 +2,7 @@ import os
 import urllib.parse
 import random
 import re
+import datetime # NEW: Gives the AI a concept of real time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -38,6 +39,9 @@ def smart_chat(req: ChatRequest):
     history = [{"role": m.role, "content": m.content} for m in req.messages]
     latest_msg = history[-1]["content"].strip()
     latest_msg_lower = latest_msg.lower()
+    
+    # Get the exact current date to prevent AI time hallucinations
+    current_date = datetime.datetime.now().strftime("%B %Y")
 
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
@@ -66,10 +70,10 @@ def smart_chat(req: ChatRequest):
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
         def generate_art():
             yield f"Here is your generated AI image:\n\n{img_markdown}"
-        return StreamingResponse(generate_art(), media_type="text/plain")
+        return StreamingResponse(generate_art(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 2: REAL WEB PHOTOS
+    # ROUTE 2: REAL WEB PHOTOS 
     # ---------------------------------------------------------
     elif is_image_request:
         search_query = latest_msg
@@ -115,7 +119,7 @@ def smart_chat(req: ChatRequest):
             
         if not combined_images:
             img_markdowns = []
-            modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling", " latest", " news", " celebration", " 2026", " profile"]
+            modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling", " latest", " news", " celebration", " profile"]
             random.shuffle(modifiers)
             
             added = 0
@@ -133,29 +137,35 @@ def smart_chat(req: ChatRequest):
 
         def generate_images():
             yield f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"
-        return StreamingResponse(generate_images(), media_type="text/plain")
+        # CHANGED to text/event-stream for zero buffering
+        return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Streaming)
+    # ROUTE 3: LIVE WEB SEARCH (Expanded keywords + Strict Anti-Hallucination)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
-        "search the web", "latest news", "real time", "current", "today", 
-        "squad", "roster", "who won", "score", "price of", "2024", "2025", "2026", "now"
+        "search", "latest", "news", "real time", "current", "today", 
+        "squad", "roster", "won", "score", "price of", "2024", "2025", "2026", "2027", "now", "players", "team"
     ]):
         if not client:
-            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/plain")
+            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/event-stream")
         
         def generate_live():
             try:
                 results = DDGS().text(latest_msg, max_results=3)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
+                # 🚀 NEW: Strict system prompt enforcing the current date
+                strict_system_prompt = (
+                    f"Current Date: {current_date}. You have real-time internet access. "
+                    f"NEVER say you have a knowledge cutoff. "
+                    f"Answer the user's prompt intelligently using ONLY this live web data:\n\n{live_info}"
+                )
+                
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[
-                        {"role": "system", "content": f"You are a helpful AI assistant. Answer using ONLY this live search data:\n\n{live_info}"}
-                    ] + history,
-                    temperature=0.5,
+                    messages=[{"role": "system", "content": strict_system_prompt}] + history,
+                    temperature=0.4,
                     stream=True
                 )
                 for chunk in stream:
@@ -164,18 +174,19 @@ def smart_chat(req: ChatRequest):
             except Exception as e:
                 yield f"⚠️ Live Search Error: {str(e)}"
         
-        return StreamingResponse(generate_live(), media_type="text/plain")
+        return StreamingResponse(generate_live(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 4: STANDARD CHATGPT TEXT (Streaming)
+    # ROUTE 4: STANDARD CHATGPT TEXT 
     # ---------------------------------------------------------
     else:
         if not client:
-            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/plain")
+            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/event-stream")
         
         def generate_chat():
             try:
-                system_instruction = [{"role": "system", "content": "You are a helpful, intelligent AI assistant like ChatGPT. Maintain context from previous messages."}]
+                # 🚀 NEW: Ensures normal chat also knows the current year
+                system_instruction = [{"role": "system", "content": f"Current Date: {current_date}. You are a helpful AI assistant. Maintain context."}]
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=system_instruction + history,
@@ -188,4 +199,4 @@ def smart_chat(req: ChatRequest):
             except Exception as e:
                 yield f"⚠️ API ERROR: {str(e)}"
         
-        return StreamingResponse(generate_chat(), media_type="text/plain")
+        return StreamingResponse(generate_chat(), media_type="text/event-stream")
