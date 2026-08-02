@@ -219,7 +219,9 @@ export default function Home() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0d0d0d' }}>ChatGPT</h2>
+          {/* 🚀 CHANGED: "ChatGPT" is now "My AI Agent" */}
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0d0d0d' }}>My AI Agent</h2>
+          
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#666' }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -307,7 +309,7 @@ export default function Home() {
                         <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                       </div>
                     ) : (
-                      // UPGRADED MULTI-IMAGE PARSER HERE
+                      // UPGRADED MULTI-IMAGE PARSER
                       <div>
                         {msg.text.split('![IMAGE](').map((part, partIndex) => {
                           if (partIndex === 0) {
