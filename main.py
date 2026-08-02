@@ -139,44 +139,46 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Anti-Looping Fix)
+    # ROUTE 3: LIVE WEB SEARCH (Draconian RAG Fix)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
-        "squad", "roster", "won", "score", "price of", "2024", "2025", "2026", "2027", "now", "players", "team"
+        "squad", "roster", "won", "score", "price of", "2024", "2025", "2026", "2027", "now", "players", "team", "list"
     ]):
         if not client:
             return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/event-stream")
         
         def generate_live():
             try:
+                # 1. Ask the AI to create a hyper-specific Google search
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": f"Turn this into a short Google search query (just the keywords). No quotes or intro: {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Turn this into a short Google search query to find an official list (just the keywords). No quotes or intro: {latest_msg}"}],
                     temperature=0.1
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
+                # Fetch 10 results
                 results = DDGS().text(search_term, max_results=10)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 🚀 NEW: Added anti-looping rules and formatting commands
+                # 🚀 2. UNBREAKABLE SYSTEM PROMPT
                 system_prompt = (
-                    f"Current Date: {current_date}. You are a highly advanced AI with real-time web access. "
-                    f"Here is the live data pulled from the web for the user's query:\n\n{live_info}\n\n"
-                    f"Your task is to answer the user's question intelligently using THIS live data. "
+                    f"Current Date: {current_date}. You are a strict data-extraction bot.\n\n"
+                    f"Here are the live web search snippets:\n{live_info}\n\n"
                     f"CRITICAL RULES:\n"
-                    f"1. Format your response clearly, using bullet points for lists.\n"
-                    f"2. DO NOT repeat the same phrases or words over and over (No infinite loops).\n"
-                    f"3. If you only have a partial list, provide what you have and stop generating.\n"
-                    f"4. Be helpful, confident, and NEVER say you don't have internet access or a knowledge cutoff."
+                    f"1. You may ONLY list information (like names) that is EXPLICITLY PRINTED in the text above.\n"
+                    f"2. DO NOT guess. DO NOT use your pre-trained memory. DO NOT fill in the blanks.\n"
+                    f"3. If the snippets only contain 3 players, you must ONLY list those 3 players.\n"
+                    f"4. If the snippets do not contain the answer, say: 'Based on current live search snippets, I cannot find the full list. Here is what I did find: [insert only what is in the text].'\n"
+                    f"5. Format as a clean bulleted list."
                 )
                 
-                # 🚀 NEW: Raised temperature from 0.3 to 0.5 to stop the broken-record loop!
+                # 🚀 3. TEMPERATURE AT 0.1 (Kills creativity to enforce strict facts)
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": system_prompt}] + history,
-                    temperature=0.5,
+                    temperature=0.1,
                     stream=True
                 )
                 for chunk in stream:
