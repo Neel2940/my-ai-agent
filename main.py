@@ -2,7 +2,7 @@ import os
 import urllib.parse
 import random
 import re
-import datetime # NEW: Gives the AI a concept of real time
+import datetime 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -40,7 +40,6 @@ def smart_chat(req: ChatRequest):
     latest_msg = history[-1]["content"].strip()
     latest_msg_lower = latest_msg.lower()
     
-    # Get the exact current date to prevent AI time hallucinations
     current_date = datetime.datetime.now().strftime("%B %Y")
 
     api_key = os.environ.get("GROQ_API_KEY")
@@ -137,11 +136,10 @@ def smart_chat(req: ChatRequest):
 
         def generate_images():
             yield f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"
-        # CHANGED to text/event-stream for zero buffering
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Expanded keywords + Strict Anti-Hallucination)
+    # ROUTE 3: LIVE WEB SEARCH (Optimized & Hallucination-Proof)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
@@ -152,20 +150,33 @@ def smart_chat(req: ChatRequest):
         
         def generate_live():
             try:
-                results = DDGS().text(latest_msg, max_results=3)
+                # 1. Ask the AI to create a sharp, Google-friendly search keyword
+                opt_res = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[{"role": "user", "content": f"Turn this into a short Google search query (just the keywords): {latest_msg}"}],
+                    temperature=0.1
+                )
+                search_term = opt_res.choices[0].message.content.replace('"', '').strip()
+                
+                # 2. Fetch 5 results instead of 3 for much better accuracy
+                results = DDGS().text(search_term, max_results=5)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 🚀 NEW: Strict system prompt enforcing the current date
+                # 3. Ultra-Strict Anti-Hallucination System Prompt
                 strict_system_prompt = (
                     f"Current Date: {current_date}. You have real-time internet access. "
-                    f"NEVER say you have a knowledge cutoff. "
-                    f"Answer the user's prompt intelligently using ONLY this live web data:\n\n{live_info}"
+                    f"You MUST answer the user's prompt using ONLY the following live search results:\n\n{live_info}\n\n"
+                    f"CRITICAL RULE: If the exact answer (like a full sports squad) is not found in the text above, "
+                    f"DO NOT guess. DO NOT use your old training data. DO NOT list retired or transferred players. "
+                    f"Instead, you must say: 'I couldn't find the complete up-to-date information on the web for that query.' "
+                    f"Never mention a knowledge cutoff."
                 )
                 
+                # Notice we lowered temperature to 0.2 so it doesn't try to get "creative" and invent players
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": strict_system_prompt}] + history,
-                    temperature=0.4,
+                    temperature=0.2,
                     stream=True
                 )
                 for chunk in stream:
@@ -177,7 +188,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_live(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 4: STANDARD CHATGPT TEXT 
+    # ROUTE 4: STANDARD CHATGPT TEXT
     # ---------------------------------------------------------
     else:
         if not client:
@@ -185,7 +196,6 @@ def smart_chat(req: ChatRequest):
         
         def generate_chat():
             try:
-                # 🚀 NEW: Ensures normal chat also knows the current year
                 system_instruction = [{"role": "system", "content": f"Current Date: {current_date}. You are a helpful AI assistant. Maintain context."}]
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
