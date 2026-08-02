@@ -219,7 +219,8 @@ export default function Home() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-          {/* 🚀 CHANGED: "ChatGPT" is now "My AI Agent" */}
+          
+          {/* 🚀 CHANGED TO MY AI AGENT HERE */}
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0d0d0d' }}>My AI Agent</h2>
           
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -309,7 +310,7 @@ export default function Home() {
                         <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                       </div>
                     ) : (
-                      // UPGRADED MULTI-IMAGE PARSER
+                      // MULTI-IMAGE PARSER
                       <div>
                         {msg.text.split('![IMAGE](').map((part, partIndex) => {
                           if (partIndex === 0) {
