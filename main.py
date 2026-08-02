@@ -139,7 +139,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Optimized & Hallucination-Proof)
+    # ROUTE 3: LIVE WEB SEARCH (Balanced Synthesizer)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
@@ -153,30 +153,29 @@ def smart_chat(req: ChatRequest):
                 # 1. Ask the AI to create a sharp, Google-friendly search keyword
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": f"Turn this into a short Google search query (just the keywords): {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Turn this into a short Google search query (just the keywords). No quotes or intro: {latest_msg}"}],
                     temperature=0.1
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
-                # 2. Fetch 5 results instead of 3 for much better accuracy
-                results = DDGS().text(search_term, max_results=5)
+                # 🚀 2. INCREASED MAX RESULTS TO 10 for a much wider data net!
+                results = DDGS().text(search_term, max_results=10)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 3. Ultra-Strict Anti-Hallucination System Prompt
-                strict_system_prompt = (
-                    f"Current Date: {current_date}. You have real-time internet access. "
-                    f"You MUST answer the user's prompt using ONLY the following live search results:\n\n{live_info}\n\n"
-                    f"CRITICAL RULE: If the exact answer (like a full sports squad) is not found in the text above, "
-                    f"DO NOT guess. DO NOT use your old training data. DO NOT list retired or transferred players. "
-                    f"Instead, you must say: 'I couldn't find the complete up-to-date information on the web for that query.' "
-                    f"Never mention a knowledge cutoff."
+                # 🚀 3. BALANCED SYSTEM PROMPT
+                system_prompt = (
+                    f"Current Date: {current_date}. You are a highly advanced AI with real-time web access. "
+                    f"Here is the live data pulled from the web for the user's query:\n\n{live_info}\n\n"
+                    f"Your task is to answer the user's question intelligently using THIS live data. "
+                    f"If the data contains a partial list (like key players), provide it and let the user know it's based on current web snippets. "
+                    f"DO NOT include retired players or players that left the club if they aren't in the live data. "
+                    f"Be helpful, confident, and NEVER say you don't have internet access or a knowledge cutoff."
                 )
                 
-                # Notice we lowered temperature to 0.2 so it doesn't try to get "creative" and invent players
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "system", "content": strict_system_prompt}] + history,
-                    temperature=0.2,
+                    messages=[{"role": "system", "content": system_prompt}] + history,
+                    temperature=0.3,
                     stream=True
                 )
                 for chunk in stream:
