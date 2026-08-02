@@ -1,9 +1,10 @@
 import os
 import urllib.parse
 import random
-import re  # NEW: Used to scan chat history for old image links
+import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from groq import Groq
 from duckduckgo_search import DDGS
@@ -27,7 +28,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "Backend is running and ready for multi-turn chat!"}
+    return {"status": "Backend is running with real-time streaming!"}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -41,11 +42,9 @@ def smart_chat(req: ChatRequest):
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
 
-    # 🚀 NEW: VISUAL MEMORY - Scan history for already shown images
     seen_image_urls = set()
     for msg in history:
         if msg["role"] == "assistant":
-            # Extracts the raw URL from any ![IMAGE](url) tag
             urls = re.findall(r'!\[IMAGE\]\((.*?)\)', msg["content"])
             for url in urls:
                 seen_image_urls.add(url)
@@ -65,10 +64,12 @@ def smart_chat(req: ChatRequest):
     if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]):
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
-        return {"response": f"Here is your generated AI image:\n\n{img_markdown}"}
+        def generate_art():
+            yield f"Here is your generated AI image:\n\n{img_markdown}"
+        return StreamingResponse(generate_art(), media_type="text/plain")
 
     # ---------------------------------------------------------
-    # ROUTE 2: REAL WEB PHOTOS (WITH STRICT DUPLICATE PREVENTION)
+    # ROUTE 2: REAL WEB PHOTOS
     # ---------------------------------------------------------
     elif is_image_request:
         search_query = latest_msg
@@ -84,7 +85,7 @@ def smart_chat(req: ChatRequest):
                 refinement = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=history + [
-                        {"role": "system", "content": "You are a strict search term extractor. Output ONLY the exact name of the person or thing the user wants to see (1 to 5 words). DO NOT write sentences. Ignore words like 'more', 'another', or 'different'."}
+                        {"role": "system", "content": "You are a strict search term extractor. Output ONLY the exact name of the person or thing the user wants to see (1 to 5 words). DO NOT write sentences."}
                     ],
                     temperature=0.1
                 )
@@ -102,12 +103,9 @@ def smart_chat(req: ChatRequest):
 
         combined_images = ""
         try:
-            # 🚀 Pull 50 images instead of 15!
             results = DDGS().images(clean_search, max_results=50)
             if results:
-                # 🚀 Filter out any image that is on the Banned List (seen_image_urls)
                 fresh_images = [res for res in results if res['image'] not in seen_image_urls]
-                
                 if len(fresh_images) >= num_images:
                     random.shuffle(fresh_images)
                     img_markdowns = [f"![IMAGE]({res['image']})" for res in fresh_images[:num_images]]
@@ -115,7 +113,6 @@ def smart_chat(req: ChatRequest):
         except Exception:
             pass 
             
-        # 🚀 Fallback to Bing, also checking the Banned List!
         if not combined_images:
             img_markdowns = []
             modifiers = ["", " portrait", " high quality", " close up", " photography", " action", " field", " 4k", " match", " smiling", " latest", " news", " celebration", " 2026", " profile"]
@@ -123,61 +120,72 @@ def smart_chat(req: ChatRequest):
             
             added = 0
             for mod in modifiers:
-                if added >= num_images:
-                    break
-                
+                if added >= num_images: break
                 modified_query = clean_search + mod
                 query_encoded = urllib.parse.quote_plus(modified_query)
                 cdn = (added % 4) + 1 
                 img_url = f"https://tse{cdn}.mm.bing.net/th?q={query_encoded}"
-                
-                # Check if Bing is trying to give us a duplicate
                 if img_url not in seen_image_urls:
                     img_markdowns.append(f"![IMAGE]({img_url})")
-                    seen_image_urls.add(img_url) # Add to memory so it doesn't duplicate within the same batch
+                    seen_image_urls.add(img_url)
                     added += 1
-            
             combined_images = "\n\n".join(img_markdowns)
 
-        return {"response": f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"}
+        def generate_images():
+            yield f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"
+        return StreamingResponse(generate_images(), media_type="text/plain")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH
+    # ROUTE 3: LIVE WEB SEARCH (Streaming)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search the web", "latest news", "real time", "current", "today", 
         "squad", "roster", "who won", "score", "price of", "2024", "2025", "2026", "now"
     ]):
         if not client:
-            return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
-        try:
-            results = DDGS().text(latest_msg, max_results=3)
-            live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
-            
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": f"You are a helpful AI assistant. Answer using ONLY this live, up-to-date search data:\n\n{live_info}"}
-                ] + history,
-                temperature=0.5
-            )
-            return {"response": completion.choices[0].message.content}
-        except Exception as e:
-            return {"response": f"⚠️ Live Search Error: {str(e)}"}
+            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/plain")
+        
+        def generate_live():
+            try:
+                results = DDGS().text(latest_msg, max_results=3)
+                live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
+                
+                stream = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": f"You are a helpful AI assistant. Answer using ONLY this live search data:\n\n{live_info}"}
+                    ] + history,
+                    temperature=0.5,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            except Exception as e:
+                yield f"⚠️ Live Search Error: {str(e)}"
+        
+        return StreamingResponse(generate_live(), media_type="text/plain")
 
     # ---------------------------------------------------------
-    # ROUTE 4: STANDARD CHATGPT TEXT
+    # ROUTE 4: STANDARD CHATGPT TEXT (Streaming)
     # ---------------------------------------------------------
     else:
         if not client:
-            return {"response": "⚠️ ERROR: Your GROQ_API_KEY is missing on Render."}
-        try:
-            system_instruction = [{"role": "system", "content": "You are a helpful, intelligent AI assistant like ChatGPT. Maintain context from previous messages in the conversation."}]
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=system_instruction + history,
-                temperature=0.7
-            )
-            return {"response": completion.choices[0].message.content}
-        except Exception as e:
-            return {"response": f"⚠️ API ERROR: {str(e)}"}
+            return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/plain")
+        
+        def generate_chat():
+            try:
+                system_instruction = [{"role": "system", "content": "You are a helpful, intelligent AI assistant like ChatGPT. Maintain context from previous messages."}]
+                stream = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=system_instruction + history,
+                    temperature=0.7,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            except Exception as e:
+                yield f"⚠️ API ERROR: {str(e)}"
+        
+        return StreamingResponse(generate_chat(), media_type="text/plain")

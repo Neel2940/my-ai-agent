@@ -131,6 +131,7 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Add empty AI placeholder message
       setSessions((prev) =>
         prev.map((s) =>
           s.id === currentSessionId
@@ -152,20 +153,30 @@ export default function Home() {
 
       if (!res.ok) throw new Error(`Server Error (${res.status})`);
 
-      const data = await res.json();
-      const aiReply = data.response || 'No response received.';
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
 
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== currentSessionId) return s;
-          const updated = [...s.messages];
-          const lastIdx = updated.length - 1;
-          if (updated[lastIdx] && updated[lastIdx].sender === 'ai') {
-            updated[lastIdx] = { ...updated[lastIdx], text: aiReply };
-          }
-          return { ...s, messages: updated };
-        })
-      );
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          accumulatedText += chunk;
+
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== currentSessionId) return s;
+              const updated = [...s.messages];
+              const lastIdx = updated.length - 1;
+              if (updated[lastIdx] && updated[lastIdx].sender === 'ai') {
+                updated[lastIdx] = { ...updated[lastIdx], text: accumulatedText };
+              }
+              return { ...s, messages: updated };
+            })
+          );
+        }
+      }
     } catch (error: any) {
       console.error(error);
       setSessions((prev) =>
@@ -194,40 +205,16 @@ export default function Home() {
       `}</style>
 
       {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 40 }}
-        />
+        <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 40 }} />
       )}
 
       {/* SIDEBAR */}
-      <aside
-        style={{
-          position: 'fixed',
-          top: 0,
-          bottom: 0,
-          left: sidebarOpen ? 0 : '-300px',
-          width: '300px',
-          backgroundColor: '#fafafa',
-          borderRight: '1px solid #e5e5e5',
-          display: 'flex',
-          flexDirection: 'column',
-          zIndex: 50,
-          transition: 'left 0.25s ease',
-          padding: '16px',
-          boxSizing: 'border-box',
-        }}
-      >
+      <aside style={{ position: 'fixed', top: 0, bottom: 0, left: sidebarOpen ? 0 : '-300px', width: '300px', backgroundColor: '#fafafa', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', zIndex: 50, transition: 'left 0.25s ease', padding: '16px', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-          
-          {/* 🚀 CHANGED TO MY AI AGENT HERE */}
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#0d0d0d' }}>My AI Agent</h2>
-          
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#666' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
+          <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#666' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '20px' }}>
@@ -250,16 +237,9 @@ export default function Home() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#888', marginBottom: '8px', paddingLeft: '8px', textTransform: 'uppercase' }}>
-            Recents
-          </div>
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#888', marginBottom: '8px', paddingLeft: '8px', textTransform: 'uppercase' }}>Recents</div>
           {sessions.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => { setCurrentSessionId(s.id); setActiveTab('chat'); if (window.innerWidth < 768) setSidebarOpen(false); }}
-              className="recent-row sidebar-item"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: '8px', cursor: 'pointer', backgroundColor: s.id === currentSessionId && activeTab === 'chat' ? '#e9e9e9' : 'transparent', fontSize: '0.9rem', color: '#2d2d2d', marginBottom: '2px' }}
-            >
+            <div key={s.id} onClick={() => { setCurrentSessionId(s.id); setActiveTab('chat'); if (window.innerWidth < 768) setSidebarOpen(false); }} className="recent-row sidebar-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: '8px', cursor: 'pointer', backgroundColor: s.id === currentSessionId && activeTab === 'chat' ? '#e9e9e9' : 'transparent', fontSize: '0.9rem', color: '#2d2d2d', marginBottom: '2px' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title}</span>
               <button onClick={(e) => deleteChat(s.id, e)} className="delete-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#ef4444' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -278,7 +258,6 @@ export default function Home() {
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
-        {/* STICKY HEADER */}
         <header style={{ position: 'sticky', top: 0, zIndex: 30, backgroundColor: '#ffffff', padding: '12px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#333' }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -291,10 +270,7 @@ export default function Home() {
           </button>
         </header>
 
-        {/* DYNAMIC CONTENT AREA */}
         <div style={{ flex: 1, maxWidth: '768px', width: '100%', margin: '0 auto', padding: '24px 16px 120px 16px', boxSizing: 'border-box' }}>
-          
-          {/* CHAT TAB */}
           {activeTab === 'chat' && (
             messages.length === 0 ? (
               <div style={{ textAlign: 'center', marginTop: '18vh', color: '#666' }}>
@@ -310,7 +286,6 @@ export default function Home() {
                         <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                       </div>
                     ) : (
-                      // MULTI-IMAGE PARSER
                       <div>
                         {msg.text.split('![IMAGE](').map((part, partIndex) => {
                           if (partIndex === 0) {
@@ -333,26 +308,21 @@ export default function Home() {
             )
           )}
 
-          {/* LIBRARY TAB */}
           {activeTab === 'library' && (
             <div style={{ textAlign: 'center', marginTop: '10vh' }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" style={{ margin: '0 auto 16px' }}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
               <h2 style={{ color: '#2d2d2d', fontSize: '1.5rem', marginBottom: '8px' }}>Your Library</h2>
               <p style={{ color: '#666' }}>Saved conversations and files will appear here.</p>
             </div>
           )}
 
-          {/* PROJECTS TAB */}
           {activeTab === 'projects' && (
             <div style={{ textAlign: 'center', marginTop: '10vh' }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" style={{ margin: '0 auto 16px' }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               <h2 style={{ color: '#2d2d2d', fontSize: '1.5rem', marginBottom: '8px' }}>My Projects</h2>
               <p style={{ color: '#666', marginBottom: '24px' }}>Organize your AI workflows and long-form documents.</p>
               <button style={{ backgroundColor: '#1d6bf3', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontSize: '1rem', cursor: 'pointer' }}>+ Create New Project</button>
             </div>
           )}
 
-          {/* PLUGINS TAB */}
           {activeTab === 'plugins' && (
             <div style={{ textAlign: 'center', marginTop: '10vh' }}>
               <h2 style={{ color: '#2d2d2d', fontSize: '1.5rem', marginBottom: '8px' }}>Plugins & Extensions</h2>
@@ -360,7 +330,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* MORE TAB */}
           {activeTab === 'more' && (
             <div style={{ textAlign: 'center', marginTop: '10vh' }}>
               <h2 style={{ color: '#2d2d2d', fontSize: '1.5rem', marginBottom: '8px' }}>Settings & More</h2>
@@ -371,7 +340,6 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* INPUT BAR */}
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', padding: '12px 16px 24px 16px', zIndex: 30 }}>
           <div style={{ maxWidth: '768px', margin: '0 auto', display: 'flex', alignItems: 'center', backgroundColor: '#f4f4f4', borderRadius: '28px', padding: '8px 12px 8px 16px', border: '1px solid #e5e5e5' }}>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
