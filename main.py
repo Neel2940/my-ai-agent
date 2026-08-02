@@ -139,7 +139,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Balanced Synthesizer)
+    # ROUTE 3: LIVE WEB SEARCH (Anti-Looping Fix)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
@@ -150,7 +150,6 @@ def smart_chat(req: ChatRequest):
         
         def generate_live():
             try:
-                # 1. Ask the AI to create a sharp, Google-friendly search keyword
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "user", "content": f"Turn this into a short Google search query (just the keywords). No quotes or intro: {latest_msg}"}],
@@ -158,24 +157,26 @@ def smart_chat(req: ChatRequest):
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
-                # 🚀 2. INCREASED MAX RESULTS TO 10 for a much wider data net!
                 results = DDGS().text(search_term, max_results=10)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 🚀 3. BALANCED SYSTEM PROMPT
+                # 🚀 NEW: Added anti-looping rules and formatting commands
                 system_prompt = (
                     f"Current Date: {current_date}. You are a highly advanced AI with real-time web access. "
                     f"Here is the live data pulled from the web for the user's query:\n\n{live_info}\n\n"
                     f"Your task is to answer the user's question intelligently using THIS live data. "
-                    f"If the data contains a partial list (like key players), provide it and let the user know it's based on current web snippets. "
-                    f"DO NOT include retired players or players that left the club if they aren't in the live data. "
-                    f"Be helpful, confident, and NEVER say you don't have internet access or a knowledge cutoff."
+                    f"CRITICAL RULES:\n"
+                    f"1. Format your response clearly, using bullet points for lists.\n"
+                    f"2. DO NOT repeat the same phrases or words over and over (No infinite loops).\n"
+                    f"3. If you only have a partial list, provide what you have and stop generating.\n"
+                    f"4. Be helpful, confident, and NEVER say you don't have internet access or a knowledge cutoff."
                 )
                 
+                # 🚀 NEW: Raised temperature from 0.3 to 0.5 to stop the broken-record loop!
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": system_prompt}] + history,
-                    temperature=0.3,
+                    temperature=0.5,
                     stream=True
                 )
                 for chunk in stream:
