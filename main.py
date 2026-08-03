@@ -139,7 +139,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Smart Synthesizer & Anti-Refusal)
+    # ROUTE 3: LIVE WEB SEARCH (The Nuclear "Amnesia" Option)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
@@ -150,33 +150,36 @@ def smart_chat(req: ChatRequest):
         
         def generate_live():
             try:
-                # 1. Force AI to create a perfect Google search (ignoring negative words like "don't mention")
+                # 1. Ask the AI to create a perfect Google search without negative words
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore negative constraints like 'do not mention'. Just give the search keywords (e.g. 'Real Madrid current squad list {current_date}'). User prompt: {latest_msg}"}],
-                    temperature=0.1
+                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore negative constraints like 'do not mention'. Just give the search keywords (e.g. 'Real Madrid current squad active roster {current_date}'). User prompt: {latest_msg}"}],
+                    temperature=0.0
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
-                # 2. Fetch maximum snippets to find as many names as possible
+                # 2. Fetch maximum snippets
                 results = DDGS().text(search_term, max_results=15)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 3. Brilliant, helpful system prompt that FORBIDS refusals
+                # 3. The Amnesia Prompt
                 system_prompt = (
-                    f"Current Date: {current_date}. You are a highly intelligent sports and news AI.\n\n"
-                    f"Here is the latest live data from the web:\n{live_info}\n\n"
-                    f"INSTRUCTIONS:\n"
-                    f"1. Answer the user's prompt as thoroughly and accurately as possible using the live data.\n"
-                    f"2. If the user asks for a team squad, list all the current active players mentioned in the snippets.\n"
-                    f"3. NEVER say 'I cannot provide...' or 'I apologize'. If the web snippets don't contain a full 25-man list, just confidently say 'Based on the latest live updates, here are the current confirmed players:' and list the ones you found.\n"
-                    f"4. Absolutely DO NOT include retired players or players who transferred out."
+                    f"Current Date: {current_date}.\n"
+                    f"You are a strict data-parsing robot suffering from amnesia. You have ZERO memory of past football players or historical events.\n\n"
+                    f"You must read the text below and ONLY extract information that is explicitly written in it.\n"
+                    f"WEB SNIPPETS:\n{live_info}\n\n"
+                    f"RULES:\n"
+                    f"1. ONLY list a name if it physically appears in the snippets above AND is described as a current player.\n"
+                    f"2. If the snippets talk about a player leaving, retiring, or transferring, DO NOT include them.\n"
+                    f"3. If you can only find 2 or 3 current names in the snippets, just list those and confidently say: 'Based on the latest live news snippets, these are the confirmed active players I could find:'\n"
+                    f"4. Ignore your pre-trained memory completely. If you invent a name not in the text, you fail."
                 )
                 
+                # 4. Temperature set to 0.0 to absolutely kill hallucinations
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": system_prompt}] + history,
-                    temperature=0.3,
+                    temperature=0.0,
                     stream=True
                 )
                 for chunk in stream:
