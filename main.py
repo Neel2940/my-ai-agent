@@ -139,7 +139,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (Draconian RAG Fix)
+    # ROUTE 3: LIVE WEB SEARCH (Smart Synthesizer & Anti-Refusal)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
@@ -150,35 +150,33 @@ def smart_chat(req: ChatRequest):
         
         def generate_live():
             try:
-                # 1. Ask the AI to create a hyper-specific Google search
+                # 1. Force AI to create a perfect Google search (ignoring negative words like "don't mention")
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": f"Turn this into a short Google search query to find an official list (just the keywords). No quotes or intro: {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore negative constraints like 'do not mention'. Just give the search keywords (e.g. 'Real Madrid current squad list {current_date}'). User prompt: {latest_msg}"}],
                     temperature=0.1
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
-                # Fetch 10 results
-                results = DDGS().text(search_term, max_results=10)
+                # 2. Fetch maximum snippets to find as many names as possible
+                results = DDGS().text(search_term, max_results=15)
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 🚀 2. UNBREAKABLE SYSTEM PROMPT
+                # 3. Brilliant, helpful system prompt that FORBIDS refusals
                 system_prompt = (
-                    f"Current Date: {current_date}. You are a strict data-extraction bot.\n\n"
-                    f"Here are the live web search snippets:\n{live_info}\n\n"
-                    f"CRITICAL RULES:\n"
-                    f"1. You may ONLY list information (like names) that is EXPLICITLY PRINTED in the text above.\n"
-                    f"2. DO NOT guess. DO NOT use your pre-trained memory. DO NOT fill in the blanks.\n"
-                    f"3. If the snippets only contain 3 players, you must ONLY list those 3 players.\n"
-                    f"4. If the snippets do not contain the answer, say: 'Based on current live search snippets, I cannot find the full list. Here is what I did find: [insert only what is in the text].'\n"
-                    f"5. Format as a clean bulleted list."
+                    f"Current Date: {current_date}. You are a highly intelligent sports and news AI.\n\n"
+                    f"Here is the latest live data from the web:\n{live_info}\n\n"
+                    f"INSTRUCTIONS:\n"
+                    f"1. Answer the user's prompt as thoroughly and accurately as possible using the live data.\n"
+                    f"2. If the user asks for a team squad, list all the current active players mentioned in the snippets.\n"
+                    f"3. NEVER say 'I cannot provide...' or 'I apologize'. If the web snippets don't contain a full 25-man list, just confidently say 'Based on the latest live updates, here are the current confirmed players:' and list the ones you found.\n"
+                    f"4. Absolutely DO NOT include retired players or players who transferred out."
                 )
                 
-                # 🚀 3. TEMPERATURE AT 0.1 (Kills creativity to enforce strict facts)
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": system_prompt}] + history,
-                    temperature=0.1,
+                    temperature=0.3,
                     stream=True
                 )
                 for chunk in stream:
