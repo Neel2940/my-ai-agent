@@ -61,9 +61,6 @@ def smart_chat(req: ChatRequest):
         prev_was_image and not any(k in latest_msg_lower for k in ["explain", "who is", "what is", "tell me", "why"])
     )
 
-    # ---------------------------------------------------------
-    # ROUTE 1: AI ART GENERATION
-    # ---------------------------------------------------------
     if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]):
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true)"
@@ -71,9 +68,6 @@ def smart_chat(req: ChatRequest):
             yield f"Here is your generated AI image:\n\n{img_markdown}"
         return StreamingResponse(generate_art(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
-    # ROUTE 2: REAL WEB PHOTOS 
-    # ---------------------------------------------------------
     elif is_image_request:
         search_query = latest_msg
         
@@ -138,9 +132,6 @@ def smart_chat(req: ChatRequest):
             yield f"Here are your completely new pictures of {clean_search}:\n\n{combined_images}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
-    # ROUTE 3: LIVE WEB SEARCH (The Nuclear "Amnesia" Option)
-    # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", 
         "squad", "roster", "won", "score", "price of", "2024", "2025", "2026", "2027", "now", "players", "team", "list"
@@ -150,36 +141,38 @@ def smart_chat(req: ChatRequest):
         
         def generate_live():
             try:
-                # 1. Ask the AI to create a perfect Google search without negative words
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore negative constraints like 'do not mention'. Just give the search keywords (e.g. 'Real Madrid current squad active roster {current_date}'). User prompt: {latest_msg}"}],
-                    temperature=0.0
+                    temperature=0.1
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
-                # 2. Fetch maximum snippets
                 results = DDGS().text(search_term, max_results=15)
+                
+                # 🚀 Safety Net: If the search returns nothing!
+                if not results:
+                    yield "The live search engine didn't return any results for this query right now. To get highly specific lists like full rosters, providing a direct URL for me to read works best!"
+                    return
+
                 live_info = "\n".join([f"- {res['title']}: {res['body']}" for res in results])
                 
-                # 3. The Amnesia Prompt
+                # 🚀 Restored personality, kept strict rules
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
-                    f"You are a strict data-parsing robot suffering from amnesia. You have ZERO memory of past football players or historical events.\n\n"
-                    f"You must read the text below and ONLY extract information that is explicitly written in it.\n"
-                    f"WEB SNIPPETS:\n{live_info}\n\n"
+                    f"You are My AI Agent, a highly intelligent and helpful assistant.\n"
+                    f"Use this live web data to answer the user:\n{live_info}\n\n"
                     f"RULES:\n"
-                    f"1. ONLY list a name if it physically appears in the snippets above AND is described as a current player.\n"
-                    f"2. If the snippets talk about a player leaving, retiring, or transferring, DO NOT include them.\n"
-                    f"3. If you can only find 2 or 3 current names in the snippets, just list those and confidently say: 'Based on the latest live news snippets, these are the confirmed active players I could find:'\n"
-                    f"4. Ignore your pre-trained memory completely. If you invent a name not in the text, you fail."
+                    f"1. ONLY list current players that physically appear in the snippets above.\n"
+                    f"2. DO NOT include retired or transferred players from your old memory.\n"
+                    f"3. Do not act like a robot. Speak naturally to the user.\n"
+                    f"4. If you can only find a few players in the text, provide them and gently explain that web snippets only show partial information, and a direct URL to a sports site would be needed for a full 25-man roster."
                 )
                 
-                # 4. Temperature set to 0.0 to absolutely kill hallucinations
                 stream = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "system", "content": system_prompt}] + history,
-                    temperature=0.0,
+                    temperature=0.2,
                     stream=True
                 )
                 for chunk in stream:
@@ -190,9 +183,6 @@ def smart_chat(req: ChatRequest):
         
         return StreamingResponse(generate_live(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
-    # ROUTE 4: STANDARD CHATGPT TEXT
-    # ---------------------------------------------------------
     else:
         if not client:
             return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/event-stream")
