@@ -153,8 +153,8 @@ def smart_chat(req: ChatRequest):
                 # 1. Ask the AI to build a highly precise web search query
                 opt_res = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore conversational filler. Create a highly specific search string (e.g., 'FC Barcelona 2026-27 squad list official' or 'AAPL current stock price {current_date}'). Query: {latest_msg}"}],
-                    temperature=0.0 # Absolute zero for logic tasks
+                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore conversational filler. If the user asks for a sports team squad, roster, or list of players, YOU MUST append the word 'Wikipedia' to the end of your search string to bypass anti-bot blockers (e.g., 'Paris Saint-Germain 2026-27 squad Wikipedia'). Query: {latest_msg}"}],
+                    temperature=0.0 
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
                 
