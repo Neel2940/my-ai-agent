@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   sender: 'user' | 'ai';
@@ -202,7 +204,13 @@ export default function Home() {
         .sidebar-item:hover { background-color: #f4f4f4; }
         .delete-btn { opacity: 0; transition: opacity 0.2s; }
         .recent-row:hover .delete-btn { opacity: 1; }
+        
+        /* NEW TABLE STYLES HERE */
+        .markdown-content table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        .markdown-content th, .markdown-content td { border: 1px solid #e5e5e5; padding: 8px 12px; text-align: left; }
+        .markdown-content th { background-color: #f4f4f4; font-weight: 600; }
       `}</style>
+        
 
       {sidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 40 }} />
@@ -286,20 +294,24 @@ export default function Home() {
                         <span style={{ color: '#666', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</span>
                       </div>
                     ) : (
-                      <div>
-                        {msg.text.split('![IMAGE](').map((part, partIndex) => {
-                          if (partIndex === 0) {
-                            return <span key={partIndex} style={{ display: 'block', marginBottom: '10px' }}>{part}</span>;
-                          }
-                          const url = part.split(')')[0];
-                          const remainingText = part.substring(url.length + 1);
-                          return (
-                            <div key={partIndex} style={{ marginBottom: '10px' }}>
-                              <img src={url} alt="Generated AI" style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5', display: 'block' }} />
-                              {remainingText && <span style={{ display: 'block', marginTop: '10px' }}>{remainingText}</span>}
-                            </div>
-                          );
-                        })}
+                      <div className="markdown-content" style={{ fontSize: '0.98rem', lineHeight: '1.6' }}>
+                        {msg.text.includes('![IMAGE](') ? (
+                          msg.text.split('![IMAGE](').map((part, partIndex) => {
+                            if (partIndex === 0) return <span key={partIndex}>{part}</span>;
+                            const url = part.split(')')[0];
+                            const remainingText = part.substring(url.length + 1);
+                            return (
+                              <div key={partIndex} style={{ margin: '12px 0' }}>
+                                <img src={url} alt="AI visual" style={{ maxWidth: '100%', borderRadius: '12px', display: 'block' }} />
+                                {remainingText && <span style={{ display: 'block', marginTop: '10px' }}>{remainingText}</span>}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.text}
+                          </ReactMarkdown>
+                        )}
                       </div>
                     )}
                   </div>
