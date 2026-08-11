@@ -152,7 +152,7 @@ def smart_chat(req: ChatRequest):
             try:
                 # 1. Ask the AI to build a highly precise web search query
                 opt_res = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.1-70b-versatile",
                     messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore conversational filler. If the user asks for a sports team squad, roster, or list of players, YOU MUST append the word 'Wikipedia' to the end of your search string to bypass anti-bot blockers (e.g., 'Paris Saint-Germain 2026-27 squad Wikipedia'). Query: {latest_msg}"}],
                     temperature=0.0 
                 )
@@ -208,7 +208,7 @@ def smart_chat(req: ChatRequest):
                 
                 # Temperature 0.1 for high factual accuracy but slight conversational naturalness
                 stream = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.1-70b-versatile",
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     temperature=0.1,
                     stream=True
@@ -232,7 +232,7 @@ def smart_chat(req: ChatRequest):
             try:
                 system_instruction = [{"role": "system", "content": f"Current Date: {current_date}. You are a highly capable and intelligent AI assistant. Maintain context across the conversation."}]
                 stream = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.1-70b-versatile",
                     messages=system_instruction + history,
                     temperature=0.6,
                     stream=True
