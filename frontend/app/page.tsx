@@ -63,7 +63,9 @@ export default function Home() {
     };
     setSessions((prev) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
-    if (window.innerWidth < 768) setSidebarOpen(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
   };
 
   const deleteChat = (id: string, e: React.MouseEvent) => {
@@ -84,7 +86,6 @@ export default function Home() {
 
   const handleCardClick = (text: string) => {
     setInput(text);
-    // Optional: You can also immediately call sendMessage() here if you want it to auto-send
   };
 
   const sendMessage = async () => {
@@ -162,13 +163,11 @@ export default function Home() {
   return (
     <div style={{ display: 'flex', height: '100vh', backgroundColor: '#ffffff', fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
       
-      {/* GLOBAL STYLES FOR MARKDOWN */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Inter', sans-serif; color: #0d0d0d; }
         
-        /* Markdown Styling */
         .markdown-body { line-height: 1.7; font-size: 1rem; color: #2d2d2d; }
         .markdown-body p { margin-bottom: 1rem; }
         .markdown-body strong { font-weight: 600; color: #000; }
@@ -176,17 +175,14 @@ export default function Home() {
         .markdown-body ul, .markdown-body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
         .markdown-body li { margin-bottom: 0.5rem; }
         
-        /* Table Styling */
         .markdown-body table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px #e5e5e5; }
         .markdown-body th, .markdown-body td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e5e5; }
         .markdown-body th { background-color: #f9f9f9; font-weight: 600; color: #444; }
         .markdown-body tr:last-child td { border-bottom: none; }
         
-        /* Code Blocks */
         .markdown-body pre { background-color: #f4f4f4; padding: 16px; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; font-family: monospace; font-size: 0.9rem; }
         .markdown-body code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
         
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d1d1d1; border-radius: 4px; }
@@ -195,17 +191,26 @@ export default function Home() {
         .nav-item:hover { background-color: #ececec; }
         .suggestion-card { transition: all 0.2s ease; }
         .suggestion-card:hover { background-color: #f9f9f9; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+        /* Responsive Layout CSS */
+        .main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; margin-left: 280px; }
+        .mobile-header { display: none; }
+        .floating-input { position: fixed; bottom: 0; left: 280px; right: 0; padding: 0 16px 32px 16px; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 40%); }
+
+        @media (max-width: 768px) {
+          .main-container { margin-left: 0; }
+          .mobile-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e5e5e5; background-color: #fff; }
+          .floating-input { left: 0; }
+        }
       `}</style>
 
-      {/* MOBILE OVERLAY */}
       {sidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 40 }} />
       )}
 
-      {/* DARK MODE SIDEBAR */}
       <aside style={{ position: 'fixed', top: 0, bottom: 0, left: sidebarOpen ? 0 : '-280px', width: '280px', backgroundColor: '#171717', color: '#ececec', display: 'flex', flexDirection: 'column', zIndex: 50, transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)', padding: '16px 12px' }}>
         
-        <button onClick={createNewChat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: 'transparent', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '0.95rem', fontWeight: 500, cursor: 'pointer', marginBottom: '24px', transition: 'background 0.2s' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#2a2a2a'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+        <button onClick={createNewChat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: 'transparent', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '0.95rem', fontWeight: 500, cursor: 'pointer', marginBottom: '24px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             New Chat
@@ -216,7 +221,7 @@ export default function Home() {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#888', marginBottom: '10px', paddingLeft: '8px', letterSpacing: '0.5px' }}>Recent</div>
           {sessions.map((s) => (
-            <div key={s.id} onClick={() => { setCurrentSessionId(s.id); if (window.innerWidth < 768) setSidebarOpen(false); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', backgroundColor: s.id === currentSessionId ? '#2a2a2a' : 'transparent', fontSize: '0.9rem', color: s.id === currentSessionId ? '#fff' : '#c5c5c5', marginBottom: '4px' }} className="nav-item">
+            <div key={s.id} onClick={() => { setCurrentSessionId(s.id); setSidebarOpen(false); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', backgroundColor: s.id === currentSessionId ? '#2a2a2a' : 'transparent', fontSize: '0.9rem', color: s.id === currentSessionId ? '#fff' : '#c5c5c5', marginBottom: '4px' }} className="nav-item">
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title}</span>
               <button onClick={(e) => deleteChat(s.id, e)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '4px' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -231,22 +236,17 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MAIN CHAT AREA */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, marginLeft: window.innerWidth > 768 ? '280px' : '0', transition: 'margin 0.3s' }}>
-        
-        {/* MOBILE HEADER */}
-        <header style={{ display: window.innerWidth > 768 ? 'none' : 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #e5e5e5', backgroundColor: '#fff' }}>
+      <main className="main-container">
+        <header className="mobile-header">
           <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', padding: '4px' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <h1 style={{ margin: '0 auto', fontSize: '1rem', fontWeight: 600, color: '#333' }}>My AI Agent</h1>
         </header>
 
-        {/* SCROLLABLE CHAT CONTENT */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px 140px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           
           {messages.length === 0 ? (
-            /* EMPTY STATE & SUGGESTIONS */
             <div style={{ width: '100%', maxWidth: '768px', margin: 'auto', textAlign: 'center', marginTop: '10vh' }}>
               <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#000', margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/><path d="m12 12 9.9 4.9"/></svg>
@@ -273,7 +273,6 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            /* ACTIVE CHAT FEED */
             <div style={{ width: '100%', maxWidth: '768px' }}>
               {messages.map((msg, index) => (
                 <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: '28px', width: '100%' }}>
@@ -323,8 +322,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* FLOATING INPUT BAR */}
-        <div style={{ position: 'fixed', bottom: 0, left: window.innerWidth > 768 ? '280px' : '0', right: 0, padding: '0 16px 32px 16px', background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 40%)' }}>
+        <div className="floating-input">
           <div style={{ maxWidth: '768px', margin: '0 auto', display: 'flex', alignItems: 'flex-end', backgroundColor: '#fff', borderRadius: '24px', padding: '10px 14px', boxShadow: '0 0 20px rgba(0,0,0,0.08)', border: '1px solid #e5e5e5' }}>
             
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
