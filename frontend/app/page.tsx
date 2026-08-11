@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 interface Message {
   sender: 'user' | 'ai';
@@ -21,26 +20,42 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load sessions and auth state from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('my_ai_agent_sessions');
-    if (saved) {
+    const savedSessions = localStorage.getItem('my_ai_agent_sessions');
+    if (savedSessions) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed = JSON.parse(savedSessions);
         if (parsed.length > 0) {
           setSessions(parsed);
           setCurrentSessionId(parsed[0].id);
-          return;
+        } else {
+          createNewChat();
         }
-      } catch (e) {}
+      } catch (e) {
+        createNewChat();
+      }
+    } else {
+      createNewChat();
     }
-    createNewChat();
+
+    const savedUser = localStorage.getItem('my_ai_agent_user');
+    if (savedUser) setUserEmail(savedUser);
   }, []);
 
+  // Save sessions to localStorage
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem('my_ai_agent_sessions', JSON.stringify(sessions));
@@ -57,15 +72,12 @@ export default function Home() {
   const createNewChat = () => {
     const newSession: ChatSession = {
       id: Date.now().toString(),
-      title: 'New Chat',
+      title: 'New chat',
       messages: [],
       createdAt: Date.now(),
     };
     setSessions((prev) => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setSidebarOpen(false);
-    }
   };
 
   const deleteChat = (id: string, e: React.MouseEvent) => {
@@ -84,8 +96,19 @@ export default function Home() {
     if (file) setInput((prev) => `${prev} [Attached File: ${file.name}] `);
   };
 
-  const handleCardClick = (text: string) => {
-    setInput(text);
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim()) return;
+    setUserEmail(emailInput);
+    localStorage.setItem('my_ai_agent_user', emailInput);
+    setShowAuthModal(false);
+    setEmailInput('');
+    setPasswordInput('');
+  };
+
+  const handleLogout = () => {
+    setUserEmail(null);
+    localStorage.removeItem('my_ai_agent_user');
   };
 
   const sendMessage = async () => {
@@ -95,9 +118,9 @@ export default function Home() {
     setInput('');
 
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
-    let updatedTitle = currentSession?.title || 'New Chat';
+    let updatedTitle = currentSession?.title || 'New chat';
     if (messages.length === 0) {
-      updatedTitle = userText.length > 28 ? userText.substring(0, 28) + '...' : userText;
+      updatedTitle = userText.length > 24 ? userText.substring(0, 24) + '...' : userText;
     }
 
     setSessions((prev) =>
@@ -160,139 +183,228 @@ export default function Home() {
     }
   };
 
+  const filteredSessions = sessions.filter((s) =>
+    s.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#ffffff', fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#ffffff', color: '#0d0d0d', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
       
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', sans-serif; color: #0d0d0d; }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: #0d0d0d; text-decoration: none; font-size: 0.92rem; cursor: pointer; transition: background 0.15s; }
+        .sidebar-item:hover { background-color: #f3f3f3; }
+        .markdown-body { line-height: 1.6; font-size: 1rem; color: #0d0d0d; }
+        .markdown-body p { margin-bottom: 0.8rem; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.95rem; }
+        .markdown-body th, .markdown-body td { border: 1px solid #e5e5e5; padding: 8px 12px; text-align: left; }
+        .markdown-body th { background-color: #f7f7f7; font-weight: 600; }
+        .markdown-body pre { background: #f4f4f4; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 10px 0; font-family: monospace; }
         
-        .markdown-body { line-height: 1.7; font-size: 1rem; color: #2d2d2d; }
-        .markdown-body p { margin-bottom: 1rem; }
-        .markdown-body strong { font-weight: 600; color: #000; }
-        .markdown-body a { color: #10a37f; text-decoration: none; }
-        .markdown-body ul, .markdown-body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
-        .markdown-body li { margin-bottom: 0.5rem; }
-        
-        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px #e5e5e5; }
-        .markdown-body th, .markdown-body td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e5e5; }
-        .markdown-body th { background-color: #f9f9f9; font-weight: 600; color: #444; }
-        .markdown-body tr:last-child td { border-bottom: none; }
-        
-        .markdown-body pre { background-color: #f4f4f4; padding: 16px; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; font-family: monospace; font-size: 0.9rem; }
-        .markdown-body code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
-        
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #d1d1d1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
-        
-        .nav-item:hover { background-color: #ececec; }
-        .suggestion-card { transition: all 0.2s ease; }
-        .suggestion-card:hover { background-color: #f9f9f9; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-
-        /* Responsive Layout CSS */
-        .main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; margin-left: 280px; }
-        .mobile-header { display: none; }
-        .floating-input { position: fixed; bottom: 0; left: 280px; right: 0; padding: 0 16px 32px 16px; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 40%); }
-
         @media (max-width: 768px) {
-          .main-container { margin-left: 0; }
-          .mobile-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e5e5e5; background-color: #fff; }
-          .floating-input { left: 0; }
+          .mobile-hide { display: none !important; }
         }
       `}</style>
 
-      {sidebarOpen && (
-        <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 40 }} />
-      )}
+      {/* SIDEBAR */}
+      <aside style={{ width: sidebarOpen ? '260px' : '0px', transition: 'width 0.2s ease', overflow: 'hidden', backgroundColor: '#f9f9f9', borderRight: '1px solid #e5e5e5', display: 'flex', flexDirection: 'column', zIndex: 20 }}>
+        <div style={{ width: '260px', padding: '12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          
+          {/* HEADER BRAND */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 8px 14px 8px' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/>
+            </svg>
+            <span style={{ fontWeight: 600, fontSize: '1.05rem', color: '#0d0d0d' }}>My AI</span>
+          </div>
 
-      <aside style={{ position: 'fixed', top: 0, bottom: 0, left: sidebarOpen ? 0 : '-280px', width: '280px', backgroundColor: '#171717', color: '#ececec', display: 'flex', flexDirection: 'column', zIndex: 50, transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)', padding: '16px 12px' }}>
-        
-        <button onClick={createNewChat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: 'transparent', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '0.95rem', fontWeight: 500, cursor: 'pointer', marginBottom: '24px' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-            New Chat
-          </span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#888', marginBottom: '10px', paddingLeft: '8px', letterSpacing: '0.5px' }}>Recent</div>
-          {sessions.map((s) => (
-            <div key={s.id} onClick={() => { setCurrentSessionId(s.id); setSidebarOpen(false); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', backgroundColor: s.id === currentSessionId ? '#2a2a2a' : 'transparent', fontSize: '0.9rem', color: s.id === currentSessionId ? '#fff' : '#c5c5c5', marginBottom: '4px' }} className="nav-item">
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title}</span>
-              <button onClick={(e) => deleteChat(s.id, e)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '4px' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+          {/* CHATGPT STYLE NAVIGATION MENU */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '16px' }}>
+            <div className="sidebar-item" onClick={createNewChat}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span>New chat</span>
             </div>
-          ))}
-        </div>
 
-        <div style={{ borderTop: '1px solid #333', paddingTop: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#10a37f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.85rem' }}>NP</div>
-          <span style={{ fontSize: '0.95rem', fontWeight: 500, color: '#ececec' }}>Neel Patel</span>
+            <div className="sidebar-item" onClick={() => setShowSearchModal(!showSearchModal)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Search chats</span>
+            </div>
+
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>Images</span>
+            </div>
+
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/></svg>
+              <span>Plugins</span>
+            </div>
+
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+              <span>Deep research</span>
+            </div>
+          </div>
+
+          {/* SEARCH CHATS OVERLAY */}
+          {showSearchModal && (
+            <div style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                placeholder="Search history..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d1d1', fontSize: '0.85rem', outline: 'none' }}
+              />
+            </div>
+          )}
+
+          {/* RECENT CHATS LIST */}
+          <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #ececec', paddingTop: '10px' }}>
+            <div style={{ fontSize: '0.75rem', color: '#888', fontWeight: 600, paddingLeft: '8px', marginBottom: '6px' }}>Chats</div>
+            {filteredSessions.map((s) => (
+              <div
+                key={s.id}
+                onClick={() => setCurrentSessionId(s.id)}
+                className="sidebar-item"
+                style={{
+                  backgroundColor: s.id === currentSessionId ? '#e8e8e8' : 'transparent',
+                  justifyContent: 'space-between',
+                  fontWeight: s.id === currentSessionId ? 600 : 400
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
+                <button onClick={(e) => deleteChat(s.id, e)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '2px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* BOTTOM MENU */}
+          <div style={{ borderTop: '1px solid #ececec', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              <span>See plans and pricing</span>
+            </div>
+
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Settings</span>
+            </div>
+
+            <div className="sidebar-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span>Help</span>
+            </div>
+
+            <div style={{ marginTop: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#666', lineHeight: '1.4' }}>
+              <strong>Get responses tailored to you</strong>
+              <div style={{ fontSize: '0.73rem', color: '#888', marginTop: '2px' }}>
+                Log in to get answers based on saved chats, plus create images and upload files.
+              </div>
+            </div>
+          </div>
+
         </div>
       </aside>
 
-      <main className="main-container">
-        <header className="mobile-header">
-          <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', padding: '4px' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <h1 style={{ margin: '0 auto', fontSize: '1rem', fontWeight: 600, color: '#333' }}>My AI Agent</h1>
+      {/* MAIN CONTENT AREA */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        
+        {/* TOP BAR WITH LOG IN / SIGN UP */}
+        <header style={{ height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', padding: '6px', cursor: 'pointer', borderRadius: '6px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            </button>
+            <span style={{ fontWeight: 600, fontSize: '1rem', color: '#0d0d0d' }}>My AI</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {userEmail ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '0.88rem', color: '#555', fontWeight: 500 }}>{userEmail}</span>
+                <button onClick={handleLogout} style={{ padding: '6px 12px', borderRadius: '18px', border: '1px solid #d1d1d1', backgroundColor: '#fff', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' }}>
+                  Log out
+                </button>
+              </div>
+            ) : (
+              <>
+                <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); }} style={{ padding: '6px 14px', borderRadius: '18px', border: 'none', backgroundColor: '#0d0d0d', color: '#fff', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' }}>
+                  Log in
+                </button>
+                <button onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }} style={{ padding: '6px 14px', borderRadius: '18px', border: '1px solid #d1d1d1', backgroundColor: '#fff', color: '#0d0d0d', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' }}>
+                  Sign up
+                </button>
+              </>
+            )}
+          </div>
         </header>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px 140px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          
+        {/* CHAT MESSAGES / HOMEPAGE */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 160px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {messages.length === 0 ? (
-            <div style={{ width: '100%', maxWidth: '768px', margin: 'auto', textAlign: 'center', marginTop: '10vh' }}>
-              <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#000', margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/><path d="m12 12 9.9 4.9"/></svg>
+            /* PHOTO 5 STYLE CENTER HOMEPAGE */
+            <div style={{ width: '100%', maxWidth: '680px', margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <h2 style={{ fontSize: '2.2rem', fontWeight: 600, color: '#0d0d0d', marginBottom: '32px', letterSpacing: '-0.5px' }}>
+                Where should we begin?
+              </h2>
+
+              {/* CENTER FLOATING INPUT BAR */}
+              <div style={{ width: '100%', backgroundColor: '#fff', border: '1px solid #e0e0e0', borderRadius: '24px', padding: '10px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                
+                <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+                
+                {/* CLEAN PLUS (+) ATTACHMENT ICON */}
+                <button onClick={() => fileInputRef.current?.click()} style={{ background: '#f4f4f4', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#444' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Ask anything"
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1.02rem', padding: '6px 8px', resize: 'none', height: '36px', fontFamily: 'inherit' }}
+                  rows={1}
+                />
+
+                <button onClick={sendMessage} disabled={!input.trim() || loading} style={{ backgroundColor: input.trim() ? '#0d0d0d' : '#e0e0e0', color: '#fff', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'default', transition: 'background 0.15s' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
               </div>
-              <h2 style={{ fontSize: '2rem', fontWeight: 600, color: '#0d0d0d', marginBottom: '40px' }}>How can I help you today?</h2>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', textAlign: 'left' }}>
-                <div onClick={() => handleCardClick('Give me the present team of Real Madrid club')} className="suggestion-card" style={{ padding: '16px', border: '1px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                  <p style={{ fontSize: '0.95rem', fontWeight: 500, color: '#2d2d2d', marginBottom: '4px' }}>Real Madrid Squad</p>
-                  <p style={{ fontSize: '0.85rem', color: '#888' }}>Get the latest 2026-27 roster</p>
-                </div>
-                <div onClick={() => handleCardClick('Summarize the latest artificial intelligence news')} className="suggestion-card" style={{ padding: '16px', border: '1px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                  <p style={{ fontSize: '0.95rem', fontWeight: 500, color: '#2d2d2d', marginBottom: '4px' }}>AI News Summary</p>
-                  <p style={{ fontSize: '0.85rem', color: '#888' }}>Catch up on tech trends</p>
-                </div>
-                <div onClick={() => handleCardClick('Write a Python script to scrape a website')} className="suggestion-card" style={{ padding: '16px', border: '1px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                  <p style={{ fontSize: '0.95rem', fontWeight: 500, color: '#2d2d2d', marginBottom: '4px' }}>Code a Web Scraper</p>
-                  <p style={{ fontSize: '0.85rem', color: '#888' }}>Python BeautifulSoup example</p>
-                </div>
-                <div onClick={() => handleCardClick('Generate a beautiful futuristic city landscape')} className="suggestion-card" style={{ padding: '16px', border: '1px solid #e5e5e5', borderRadius: '12px', cursor: 'pointer' }}>
-                  <p style={{ fontSize: '0.95rem', fontWeight: 500, color: '#2d2d2d', marginBottom: '4px' }}>Create an Image</p>
-                  <p style={{ fontSize: '0.85rem', color: '#888' }}>Generate AI artwork instantly</p>
-                </div>
+
+              {/* QUICK PILL ACTION BUTTON */}
+              <div style={{ marginTop: '20px' }}>
+                <button onClick={() => setInput('What can you do?')} style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid #e5e5e5', backgroundColor: '#fff', fontSize: '0.88rem', color: '#555', cursor: 'pointer', transition: 'background 0.15s' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f7f7f7'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fff'}>
+                  What can you do?
+                </button>
               </div>
             </div>
           ) : (
-            <div style={{ width: '100%', maxWidth: '768px' }}>
+            /* ACTIVE CHAT FEED */
+            <div style={{ width: '100%', maxWidth: '720px' }}>
               {messages.map((msg, index) => (
-                <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: '28px', width: '100%' }}>
+                <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: '24px', width: '100%' }}>
                   
                   {msg.sender === 'ai' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/><path d="m12 12 9.9 4.9"/></svg>
-                      </div>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0d0d0d' }}>My AI Agent</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/>
+                      </svg>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0d0d0d' }}>My AI</span>
                     </div>
                   )}
 
-                  <div style={{ maxWidth: msg.sender === 'user' ? '75%' : '100%', backgroundColor: msg.sender === 'user' ? '#f4f4f4' : 'transparent', padding: msg.sender === 'user' ? '12px 20px' : '0', borderRadius: msg.sender === 'user' ? '24px' : '0', color: '#0d0d0d' }}>
-                    
+                  <div style={{ maxWidth: msg.sender === 'user' ? '80%' : '100%', backgroundColor: msg.sender === 'user' ? '#f4f4f4' : 'transparent', padding: msg.sender === 'user' ? '12px 18px' : '0', borderRadius: msg.sender === 'user' ? '20px' : '0' }}>
                     {msg.sender === 'ai' && msg.text === '' && loading ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#888', fontStyle: 'italic' }}>
-                        <div style={{ width: '8px', height: '8px', backgroundColor: '#888', borderRadius: '50%', animation: 'pulse 1.5s infinite' }} />
-                        Thinking...
-                      </div>
+                      <div style={{ color: '#888', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</div>
                     ) : (
                       <div className="markdown-body">
                         {msg.text.includes('![IMAGE](') ? (
@@ -301,16 +413,14 @@ export default function Home() {
                             const url = part.split(')')[0];
                             const remainingText = part.substring(url.length + 1);
                             return (
-                              <div key={partIndex} style={{ margin: '16px 0' }}>
-                                <img src={url} alt="AI Generated" style={{ maxWidth: '100%', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                {remainingText && <span style={{ display: 'block', marginTop: '12px' }}>{remainingText}</span>}
+                              <div key={partIndex} style={{ margin: '14px 0' }}>
+                                <img src={url} alt="AI Generated" style={{ maxWidth: '100%', borderRadius: '12px', border: '1px solid #e5e5e5' }} />
+                                {remainingText && <span style={{ display: 'block', marginTop: '10px' }}>{remainingText}</span>}
                               </div>
                             );
                           })
                         ) : (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {msg.text}
-                          </ReactMarkdown>
+                          <ReactMarkdown>{msg.text}</ReactMarkdown>
                         )}
                       </div>
                     )}
@@ -322,37 +432,98 @@ export default function Home() {
           )}
         </div>
 
-        <div className="floating-input">
-          <div style={{ maxWidth: '768px', margin: '0 auto', display: 'flex', alignItems: 'flex-end', backgroundColor: '#fff', borderRadius: '24px', padding: '10px 14px', boxShadow: '0 0 20px rgba(0,0,0,0.08)', border: '1px solid #e5e5e5' }}>
-            
-            <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
-            <button onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: '#666' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 5.66l-8.59 8.58a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            </button>
-            
-            <textarea 
-              value={input} 
-              onChange={(e) => setInput(e.target.value)} 
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-              placeholder="Message My AI Agent..." 
-              style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: '1rem', color: '#0d0d0d', padding: '10px 12px', resize: 'none', maxHeight: '120px', minHeight: '44px', fontFamily: 'inherit' }}
-              rows={1}
-            />
+        {/* BOTTOM FIXED INPUT BAR (When in Chat Mode) */}
+        {messages.length > 0 && (
+          <div style={{ position: 'fixed', bottom: 0, left: sidebarOpen ? '260px' : '0', right: 0, padding: '0 16px 24px 16px', background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 50%)' }}>
+            <div style={{ maxWidth: '720px', margin: '0 auto', backgroundColor: '#fff', border: '1px solid #e0e0e0', borderRadius: '24px', padding: '8px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              
+              <button onClick={() => fileInputRef.current?.click()} style={{ background: '#f4f4f4', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#444' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
 
-            <button onClick={sendMessage} disabled={!input.trim() || loading} style={{ backgroundColor: input.trim() ? '#000' : '#e5e5e5', color: '#fff', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'default', transition: 'background 0.2s', padding: '6px', marginBottom: '4px' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            </button>
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                placeholder="Message My AI..."
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1rem', padding: '6px', resize: 'none', maxHeight: '100px', minHeight: '32px', fontFamily: 'inherit' }}
+                rows={1}
+              />
+
+              <button onClick={sendMessage} disabled={!input.trim() || loading} style={{ backgroundColor: input.trim() ? '#0d0d0d' : '#e0e0e0', color: '#fff', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'default' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              </button>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: '0.73rem', color: '#888', marginTop: '8px' }}>
+              ChatGPT is AI. By using it, you agree to our Terms & Privacy Policy.
+            </div>
           </div>
-          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#888', marginTop: '12px' }}>
-            My AI Agent can make mistakes. Consider verifying important information.
+        )}
+
+      </main>
+
+      {/* LOGIN / SIGNUP MODAL DIALOG */}
+      {showAuthModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '380px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', position: 'relative' }}>
+            
+            <button onClick={() => setShowAuthModal(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 600, color: '#0d0d0d', marginBottom: '8px', textAlign: 'center' }}>
+              {authMode === 'login' ? 'Welcome back' : 'Create an account'}
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '24px', textAlign: 'center' }}>
+              Log in or sign up to save your chat history and preferences.
+            </p>
+
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: '#444', marginBottom: '4px' }}>Email address</label>
+                <input
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="name@example.com"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '0.95rem', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: '#444', marginBottom: '4px' }}>Password</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '0.95rem', outline: 'none' }}
+                />
+              </div>
+
+              <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: '#0d0d0d', color: '#fff', fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer', marginTop: '8px' }}>
+                {authMode === 'login' ? 'Continue' : 'Sign up'}
+              </button>
+            </form>
+
+            <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.85rem', color: '#666' }}>
+              {authMode === 'login' ? (
+                <>Don't have an account? <span onClick={() => setAuthMode('signup')} style={{ color: '#0d0d0d', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>Sign up</span></>
+              ) : (
+                <>Already have an account? <span onClick={() => setAuthMode('login')} style={{ color: '#0d0d0d', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>Log in</span></>
+              )}
+            </div>
           </div>
         </div>
-      </main>
+      )}
+
     </div>
   );
 }
