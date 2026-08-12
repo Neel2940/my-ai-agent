@@ -75,15 +75,22 @@ def smart_chat(req: ChatRequest):
     if len(history) >= 2:
         prev_was_image = "![IMAGE]" in history[-2]["content"] or "Here is a real picture" in history[-2]["content"]
 
-    image_keywords = ["image", "photo", "picture", "pic", "img", "generate", "draw", "create", "paint"]
-    is_image_request = any(k in latest_msg_lower for k in image_keywords) or (
-        prev_was_image and not any(k in latest_msg_lower for k in ["explain", "who is", "what is"])
-    )
+    # --- UPGRADED ACCURATE INTENT DETECTION ---
+    # 1. Use regex for exact word boundaries so 'pic' or 'img' doesn't mismatch inside other words
+    image_pattern = r'\b(image|images|photo|photos|picture|pictures|pic|pics|img|imgs|draw|generate|paint)\b'
+    has_image_keyword = bool(re.search(image_pattern, latest_msg_lower))
+
+    # 2. Check for clear factual/question words
+    factual_keywords = ["age", "how old", "height", "net worth", "born", "who is", "what is", "when", "where", "explain", "tell me", "squad", "roster", "salary"]
+    has_factual_intent = any(k in latest_msg_lower for k in factual_keywords)
+
+    # 3. Determine if this is TRULY an image request (Never trigger an image if they ask a factual question)
+    is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
     # ---------------------------------------------------------
     # ROUTE 1: AI ART GENERATION
     # ---------------------------------------------------------
-    if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]):
+    if any(k in latest_msg_lower for k in ["generate", "draw", "create", "paint"]) and not has_factual_intent:
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded})"
         def generate_art():
