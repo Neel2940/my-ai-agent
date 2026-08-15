@@ -31,12 +31,11 @@ class ChatRequest(BaseModel):
     messages: list[MessageItem]
 
 def fetch_webpage_content(url):
-    """Scrapes the text content of a webpage to bypass DDGS snippet limits."""
+    """Scrapes the text content of a webpage. Uses a custom User-Agent so Wikipedia doesn't block it."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(url, headers=headers, timeout=5)
+        headers = {'User-Agent': 'MyAIAgentBot/1.0 (Contact: admin@example.com)'}
+        response = requests.get(url, headers=headers, timeout=8)
         soup = BeautifulSoup(response.text, 'html.parser')
-        # Remove scripts and styles for clean text extraction
         for script in soup(["script", "style"]):
             script.extract()
         text = soup.get_text(separator=' ', strip=True)
@@ -53,7 +52,6 @@ def smart_chat(req: ChatRequest):
     if not req.messages:
         return {"response": "No message history provided."}
 
-    # Format history for Groq
     history = [{"role": m.role, "content": m.content} for m in req.messages]
     latest_msg = history[-1]["content"].strip()
     latest_msg_lower = latest_msg.lower()
@@ -70,21 +68,16 @@ def smart_chat(req: ChatRequest):
             for url in urls:
                 seen_image_urls.add(url)
 
-    # Contextual check if the previous message triggered an image
     prev_was_image = False
     if len(history) >= 2:
         prev_was_image = "![IMAGE]" in history[-2]["content"] or "Here is a real picture" in history[-2]["content"]
 
-    # --- UPGRADED ACCURATE INTENT DETECTION ---
-    # 1. Use regex for exact word boundaries so 'pic' or 'img' doesn't mismatch inside other words
     image_pattern = r'\b(image|images|photo|photos|picture|pictures|pic|pics|img|imgs|draw|generate|paint)\b'
     has_image_keyword = bool(re.search(image_pattern, latest_msg_lower))
 
-    # 2. Check for clear factual/question words
     factual_keywords = ["age", "how old", "height", "net worth", "born", "who is", "what is", "when", "where", "explain", "tell me", "squad", "roster", "salary"]
     has_factual_intent = any(k in latest_msg_lower for k in factual_keywords)
 
-    # 3. Determine if this is TRULY an image request (Never trigger an image if they ask a factual question)
     is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
     # ---------------------------------------------------------
@@ -98,16 +91,14 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_art(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 2: REAL WEB PHOTOS (Upgraded with AI Entity Extraction)
+    # ROUTE 2: REAL WEB PHOTOS
     # ---------------------------------------------------------
     elif is_image_request:
         num_images = 1
         if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
         elif any(w in latest_msg_lower for w in ["three", "3"]): num_images = 3
-        elif any(w in latest_msg_lower for w in ["four", "4"]): num_images = 4
-        elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more", "multiple"]): num_images = 4
+        elif any(w in latest_msg_lower for w in ["four", "4", "five", "5", "some", "few", "more", "multiple"]): num_images = 4
 
-        # Ask the AI to extract a flawless, clean search string
         try:
             opt_res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
@@ -120,7 +111,6 @@ def smart_chat(req: ChatRequest):
 
         combined_images = ""
         try:
-            # Using updated ddgs library format
             results = DDGS().images(clean_search, max_results=50)
             if results:
                 fresh_images = [res for res in results if res.get('image') not in seen_image_urls]
@@ -142,7 +132,7 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ---------------------------------------------------------
-    # ROUTE 3: PERFECT WEB SCRAPER (For accurate lists & real-time info)
+    # ROUTE 3: PERFECT WEB SCRAPER (With Failsafe Wikipedia API)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
         "search", "latest", "news", "real time", "current", "today", "now", "present",
@@ -154,25 +144,43 @@ def smart_chat(req: ChatRequest):
 
         def generate_live():
             try:
-                # 1. Ask the AI to build a highly precise web search query
+                # 1. Ask the AI to build a highly precise web search query (ULTRA STRICT)
                 opt_res = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": f"Extract the core subject for a web search. Ignore conversational filler. If the user asks for a sports team squad, roster, or list of players, YOU MUST append the word 'Wikipedia' to the end of your search string to bypass anti-bot blockers (e.g., 'Paris Saint-Germain 2026-27 squad Wikipedia'). Query: {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Return ONLY the pure search query for this prompt. No intro, no quotes, no extra text. If it is about a sports team or players, append the word 'Wikipedia'. Prompt: {latest_msg}"}],
                     temperature=0.0
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip()
+                search_term = search_term.split('\n')[0] # Failsafe in case Llama outputs multiple lines
 
                 # 2. Search using ddgs
-                results = DDGS().text(search_term, max_results=5)
+                results = []
+                try:
+                    results = DDGS().text(search_term, max_results=5)
+                except Exception:
+                    pass
                 
-                # 3. Intelligent Deep Scraping
                 page_data = ""
                 snippets_data = ""
 
+                # 3. FAILSAFE: Official Wikipedia API (Bypasses all search engine blocks)
+                if not results and "wikipedia" in search_term.lower():
+                    clean_wiki_query = search_term.lower().replace("wikipedia", "").strip()
+                    try:
+                        wiki_api_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(clean_wiki_query)}&utf8=&format=json"
+                        wiki_res = requests.get(wiki_api_url, headers={'User-Agent': 'MyAIAgentBot/1.0'}).json()
+                        if wiki_res.get("query", {}).get("search"):
+                            page_title = wiki_res["query"]["search"][0]["title"]
+                            page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(page_title.replace(' ', '_'))}"
+                            scraped_content = fetch_webpage_content(page_url)
+                            if scraped_content:
+                                page_data = f"--- FULL PAGE SCRAPED DATA FROM {page_url} ---\n{scraped_content}"
+                    except Exception:
+                        pass
+
+                # 4. Standard Intelligent Deep Scraping (If DDG worked)
                 if results:
                     snippets_data = "\n".join([f"Source: {res.get('href', 'Unknown URL')} | Title: {res.get('title', '')} | Snippet: {res.get('body', '')}" for res in results])
-                    
-                    # Look for authoritative sources to deep-scrape
                     trusted_domains = ["wikipedia.org", "espn", "goal.com", "transfermarkt", "skysports"]
                     
                     for item in results:
@@ -181,9 +189,8 @@ def smart_chat(req: ChatRequest):
                             scraped_content = fetch_webpage_content(href)
                             if scraped_content and len(scraped_content) > 1000:
                                 page_data = f"--- FULL PAGE SCRAPED DATA FROM {href} ---\n{scraped_content}"
-                                break # Stop after finding one good deep source
+                                break 
                     
-                    # Fallback to the very first link if no trusted domains are found
                     if not page_data and results:
                         fallback_href = results[0].get("href", "")
                         scraped_content = fetch_webpage_content(fallback_href)
@@ -191,13 +198,11 @@ def smart_chat(req: ChatRequest):
                             page_data = f"--- FULL PAGE SCRAPED DATA FROM {fallback_href} ---\n{scraped_content}"
 
                 if not results and not page_data:
-                    yield "I couldn't locate real-time data for that query right now. If you are looking for scores or news, please rephrase your request."
+                    yield f"I couldn't locate real-time data for '{search_term}' right now. Please try rephrasing your request."
                     return
 
-                # Combine deep data and snippets
                 context_data = f"{page_data}\n\n--- SEARCH SNIPPETS ---\n{snippets_data}"
 
-                # 4. The "Perfect AI" System Prompt
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
                     "You are a top-tier, highly accurate AI Assistant.\n"
@@ -210,7 +215,6 @@ def smart_chat(req: ChatRequest):
                     f"\nLIVE WEB DATA:\n{context_data}"
                 )
 
-                # Temperature 0.1 for high factual accuracy but slight conversational tone
                 stream = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[{"role": "system", "content": system_prompt}] + [{"role": "user", "content": latest_msg}],
