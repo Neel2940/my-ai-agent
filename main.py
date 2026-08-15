@@ -145,8 +145,9 @@ def smart_chat(req: ChatRequest):
     # ROUTE 3: PERFECT WEB SCRAPER (For accurate lists & real-time info)
     # ---------------------------------------------------------
     elif any(keyword in latest_msg_lower for keyword in [
-        "search", "latest", "news", "real time", "current", "today", 
-        "squad", "roster", "won", "score", "price of", "2024", "2025", "2026"
+        "search", "latest", "news", "real time", "current", "today", "now", "present",
+        "squad", "roster", "team", "club", "won", "score", "price of", "who is", "what is", 
+        "2024", "2025", "2026", "recent", "update", "stats", "how many"
     ]):
         if not client:
             return StreamingResponse(iter(["⚠️ ERROR: GROQ_API_KEY missing."]), media_type="text/event-stream")
@@ -241,8 +242,9 @@ def smart_chat(req: ChatRequest):
                     "CRITICAL DIRECTIVES:\n"
                     "1. ACCURACY OVER EVERYTHING: You must ONLY present factual information.\n"
                     "2. ZERO HALLUCINATION: Do NOT use your pre-trained memory to invent facts.\n"
-                    "3. FORMATTING EXCELLENCE: If the user asks for a list, team, or roster, use clean Markdown tables.\n"
-                    "4. PROFESSIONAL TONE: Be helpful, direct, and confident. Never lecture the user.\n"
+                    "3. NO KNOWLEDGE CUTOFF: NEVER mention 'December 2023' or any knowledge cutoff. You live in the present year, 2026. If you lack real-time data to answer a question, gently ask the user to include words like 'latest', 'current', or '2026' in their prompt so your web scraper can fetch the live data.\n"
+                    "4. FORMATTING EXCELLENCE: If the user asks for a list, team, or roster, use clean Markdown tables.\n"
+                    "5. PROFESSIONAL TONE: Be helpful, direct, and confident. Never lecture the user.\n"
                 )
                 
                 system_instruction = [{"role": "system", "content": system_prompt}]
