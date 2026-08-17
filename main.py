@@ -30,13 +30,11 @@ class ChatRequest(BaseModel):
     messages: list[MessageItem]
 
 def clean_scraped_text(text: str) -> str:
-    """Cleans excess whitespace and citation brackets."""
     text = re.sub(r'\[\d+\]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 def fetch_webpage_content(url: str) -> str:
-    """Scrapes clean text content from a given webpage."""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -45,17 +43,28 @@ def fetch_webpage_content(url: str) -> str:
         if response.status_code != 200:
             return ""
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        roster_data = ""
+        for table in soup.find_all('table'):
+            table_text = table.get_text(separator=' ', strip=True).lower()
+            if 'player' in table_text and ('pos' in table_text or 'nat' in table_text or 'no.' in table_text or 'app' in table_text):
+                for row in table.find_all('tr'):
+                    roster_data += row.get_text(separator=' | ', strip=True) + "\n"
+                roster_data += "\n"
+
         for element in soup(["script", "style", "nav", "footer", "header", "noscript"]):
             element.decompose()
-        text = soup.get_text(separator=' ')
-        return clean_scraped_text(text)[:8000]
+            
+        main_text = soup.get_text(separator=' ')
+        clean_main = clean_scraped_text(main_text)
+        
+        final_text = f"--- CRITICAL SQUAD/ROSTER DATA ---\n{roster_data}\n--- PAGE TEXT ---\n{clean_main}"
+        return final_text[:10000]
     except Exception:
         return ""
 
 def search_wikipedia_direct(entity: str) -> str:
-    """Directly queries the official Wikipedia API for football clubs/entities."""
     try:
-        # Prioritize main football club articles
         search_term = entity.strip()
         if not any(w in search_term.lower() for w in ["fc", "f.c.", "club"]):
             search_term += " F.C."
@@ -67,7 +76,6 @@ def search_wikipedia_direct(entity: str) -> str:
         if not results:
             return ""
 
-        # Filter out esports or youth teams if looking for primary squad
         selected_title = results[0]["title"]
         for r in results:
             t = r["title"].lower()
@@ -82,7 +90,7 @@ def search_wikipedia_direct(entity: str) -> str:
 
 @app.get("/")
 def home():
-    return {"status": "Backend online with intelligent sports search and squad formatting."}
+    return {"status": "Backend online with Llama 3.1 inference."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -97,7 +105,6 @@ def smart_chat(req: ChatRequest):
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
 
-    # Track duplicate images
     seen_image_urls = set()
     for msg in history:
         if msg["role"] == "assistant":
@@ -115,9 +122,7 @@ def smart_chat(req: ChatRequest):
 
     is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
-    # ---------------------------------------------------------
     # ROUTE 1: AI ART GENERATION
-    # ---------------------------------------------------------
     if any(k in latest_msg_lower for k in ["generate", "draw", "create image", "paint"]) and not has_factual_intent:
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded})"
@@ -125,9 +130,7 @@ def smart_chat(req: ChatRequest):
             yield f"Here is your generated AI image:\n\n{img_markdown}"
         return StreamingResponse(generate_art(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
     # ROUTE 2: REAL WEB PHOTOS
-    # ---------------------------------------------------------
     elif is_image_request:
         num_images = 1
         if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
@@ -138,7 +141,7 @@ def smart_chat(req: ChatRequest):
         if client:
             try:
                 opt_res = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-70b-versatile",
                     messages=[{"role": "user", "content": f"Extract ONLY the main subject for image search from this text (e.g. 'Cristiano Ronaldo'): {latest_msg}"}],
                     temperature=0.0
                 )
@@ -166,9 +169,7 @@ def smart_chat(req: ChatRequest):
             yield f"Here are your pictures of {clean_search}:\n\n{combined_images}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
-    # ROUTE 3: WEB SEARCH & LIVE KNOWLEDGE (ChatGPT Style)
-    # ---------------------------------------------------------
+    # ROUTE 3: WEB SEARCH & LIVE KNOWLEDGE
     elif any(k in latest_msg_lower for k in [
         "search", "latest", "news", "current", "today", "now", "present",
         "squad", "roster", "team", "club", "won", "score", "price", "who is", "what is",
@@ -179,24 +180,20 @@ def smart_chat(req: ChatRequest):
 
         def generate_live():
             try:
-                # 1. Generate optimized search terms
                 opt_res = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-70b-versatile",
                     messages=[{"role": "user", "content": f"Convert this request into a concise Google/Wikipedia search query. If it is a football/sports squad request, format as '[Club Name] current first team squad'. Return ONLY the search terms: {latest_msg}"}],
                     temperature=0.0
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
 
-                # 2. Gather context from DuckDuckGo & Wikipedia
                 context_data = ""
                 
-                # Check direct Wikipedia first for teams/clubs/people
                 if any(w in latest_msg_lower for w in ["squad", "roster", "team", "club", "who is"]):
                     wiki_data = search_wikipedia_direct(search_term)
                     if wiki_data:
                         context_data += f"--- WIKIPEDIA SQUAD & PROFILE DATA ---\n{wiki_data}\n\n"
 
-                # Fetch web search snippets
                 try:
                     ddg_results = DDGS().text(search_term, max_results=5)
                     if ddg_results:
@@ -205,7 +202,6 @@ def smart_chat(req: ChatRequest):
                 except Exception:
                     pass
 
-                # 3. ChatGPT-style System Prompt
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
                     "You are a top-tier, world-class AI Assistant designed to deliver comprehensive, accurate responses.\n\n"
@@ -225,7 +221,7 @@ def smart_chat(req: ChatRequest):
                 )
 
                 stream = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-70b-versatile",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": latest_msg}
@@ -243,9 +239,7 @@ def smart_chat(req: ChatRequest):
 
         return StreamingResponse(generate_live(), media_type="text/event-stream")
 
-    # ---------------------------------------------------------
     # ROUTE 4: STANDARD GENERAL CHAT
-    # ---------------------------------------------------------
     else:
         if not client:
             return StreamingResponse(iter(["⚠️ GROQ_API_KEY missing."]), media_type="text/event-stream")
@@ -258,7 +252,7 @@ def smart_chat(req: ChatRequest):
                     "Answer clearly, thoroughly, and factually. Never mention a 2023 knowledge cutoff."
                 )
                 stream = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-70b-versatile",
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     temperature=0.6,
                     stream=True
