@@ -15,39 +15,21 @@ interface ChatSession {
   createdAt: number;
 }
 
-const AILogo = ({ size = 24 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="instaGradient" x1="0%" y1="100%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#f09433" />
-        <stop offset="25%" stopColor="#e6683c" />
-        <stop offset="50%" stopColor="#dc2743" />
-        <stop offset="75%" stopColor="#cc2366" />
-        <stop offset="100%" stopColor="#bc1888" />
-      </linearGradient>
-    </defs>
-    <rect width="24" height="24" rx="6" fill="url(#instaGradient)" />
-    <text x="12" y="16.5" fill="white" fontSize="11" fontWeight="800" fontFamily="sans-serif" textAnchor="middle" letterSpacing="0.5">AI</text>
-  </svg>
-);
-
 export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
+  const [attachedFile, setAttachedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // Navigation & UI State
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearchModal, setShowSearchModal] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'images' | 'plugins' | 'projects' | 'library' | 'pricing' | 'settings'>('chat');
   
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Swipe Gesture State
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
@@ -61,7 +43,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Check local storage safely
     const savedSessions = localStorage.getItem('my_ai_agent_sessions');
     if (savedSessions) {
       try {
@@ -73,11 +54,7 @@ export default function Home() {
       } catch (e) { createNewChat(); }
     } else createNewChat();
     
-    const savedUser = localStorage.getItem('my_ai_agent_user');
-    if (savedUser) setUserEmail(savedUser);
-    
-    // Open sidebar by default on large screens
-    if (window.innerWidth >= 768) setSidebarOpen(true);
+    if (window.innerWidth >= 1024) setSidebarOpen(true);
   }, []);
 
   useEffect(() => {
@@ -99,12 +76,12 @@ export default function Home() {
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
-    if (distance > 50 && window.innerWidth < 768) setSidebarOpen(false); // Swipe left closes
-    if (distance < -50 && touchStart < 50 && window.innerWidth < 768) setSidebarOpen(true); // Swipe right from edge opens
+    if (distance > 50 && window.innerWidth < 1024) setSidebarOpen(false); 
+    if (distance < -50 && touchStart < 50 && window.innerWidth < 1024) setSidebarOpen(true); 
   };
 
   const closeSidebarOnMobile = () => {
-    if (window.innerWidth < 768) setSidebarOpen(false);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
   };
 
   const createNewChat = () => {
@@ -115,27 +92,20 @@ export default function Home() {
     closeSidebarOnMobile();
   };
 
-  const deleteChat = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = sessions.filter((s) => s.id !== id);
-    setSessions(updated);
-    if (updated.length > 0) {
-      if (currentSessionId === id) setCurrentSessionId(updated[0].id);
-    } else createNewChat();
-  };
-
-  const handleAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userEmail) return;
-    localStorage.setItem('my_ai_agent_user', userEmail);
-    setShowAuthModal(false);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setAttachedFile(file.name);
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || loading || !currentSessionId) return;
+    if ((!input.trim() && !attachedFile) || loading || !currentSessionId) return;
     setActiveView('chat');
-    const userText = input;
+    
+    let userText = input;
+    if (attachedFile) userText = `[Attached File: ${attachedFile}] ${userText}`;
+    
     setInput('');
+    setAttachedFile(null);
 
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
     let updatedTitle = currentSession?.title || 'New chat';
@@ -183,229 +153,365 @@ export default function Home() {
     } finally { setLoading(false); }
   };
 
-  const handleNavClick = (view: any) => {
-    setActiveView(view);
-    closeSidebarOnMobile();
-  };
-
-  const filteredSessions = sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()));
-
   return (
-    <div className="app-container" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+    <div className="coral-root" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
       
       <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #0d0d0d; }
-        
-        .app-container { display: flex; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
-        
-        /* SIDEBAR CSS */
-        .sidebar {
-          height: 100%;
-          background-color: #f9f9f9;
-          border-right: 1px solid #e5e5e5;
-          display: flex;
-          flex-direction: column;
-          z-index: 40;
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin 0.3s ease;
-          width: 280px;
-          flex-shrink: 0;
-        }
-        
-        /* MAIN CHAT AREA CSS */
-        .main-content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-          min-width: 0; /* Prevents flexbox squishing */
-        }
-        
-        /* BACKDROP FOR MOBILE */
-        .backdrop {
-          position: fixed; inset: 0; background-color: rgba(0,0,0,0.4);
-          z-index: 30; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
-        }
-        .backdrop.open { opacity: 1; pointer-events: auto; }
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+        @import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap');
 
-        /* RESPONSIVE DESIGN (The Magic Fix) */
-        @media (max-width: 767px) {
-          .sidebar {
-            position: fixed; top: 0; bottom: 0; left: 0;
-            width: 80%; max-width: 320px;
-            transform: translateX(-100%);
-          }
-          .sidebar.open { transform: translateX(0); }
-        }
-        
-        @media (min-width: 768px) {
-          .sidebar {
-            position: relative;
-            margin-left: -280px;
-          }
-          .sidebar.open { margin-left: 0; }
-          .backdrop { display: none !important; }
+        :root {
+          --gesso-canvas: #2C2EB8;
+          --gesso-surface: #5a5bcd;
+          --gesso-surface-elevated: #6465d0;
+          --gesso-surface-recessed: #2a2caf;
+          --gesso-fg: #FFFFFF;
+          --gesso-fg-muted: #B8B9E8;
+          --gesso-divider: rgba(255,255,255,0.04);
+          --gesso-accent: #FFFFFF;
+          --gesso-accent-2: #F2A81E;
+          --gesso-on-accent: #000000;
+          --gesso-data-4: #7992ff;
+          
+          --gesso-radius-sm: 4px;
+          --gesso-radius-md: 8px;
+          --gesso-radius-lg: 12px;
+          --gesso-radius-full: 9999px;
+          
+          --gesso-font-display: "Geist", system-ui, -apple-system, sans-serif;
+          --gesso-font-body: "Satoshi", system-ui, -apple-system, sans-serif;
+          
+          --gesso-duration-fast: 180ms;
+          --gesso-easing-default: cubic-bezier(.4,0,.2,1);
         }
 
-        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; color: #0d0d0d; text-decoration: none; font-size: 0.95rem; cursor: pointer; transition: background 0.15s; }
-        .sidebar-item:hover { background-color: #e5e5e5; }
-        .active-sidebar-item { background-color: #e5e5e5; font-weight: 600; }
+        * { box-sizing: border-box; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; margin: 0; padding: 0; }
         
-        .chat-scroll-area { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flexDirection: column; alignItems: center; }
-        .input-area { flex-shrink: 0; padding: 12px 16px 24px 16px; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #ffffff 20%); }
+        .coral-root {
+          background: var(--gesso-canvas);
+          color: var(--gesso-fg);
+          font-family: var(--gesso-font-body);
+          display: flex;
+          height: 100dvh;
+          width: 100vw;
+          overflow: hidden;
+          position: fixed;
+          top: 0; left: 0;
+        }
+
+        h1, h2, h3, .display { font-family: var(--gesso-font-display); }
+        button, input, textarea { font-family: inherit; color: inherit; }
+
+        /* HEADER */
+        .appbar {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 16px 16px; flex-shrink: 0; z-index: 10;
+        }
+        .menu-btn {
+          width: 40px; height: 40px; border-radius: var(--gesso-radius-full);
+          background: transparent; border: none; display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: background var(--gesso-duration-fast) var(--gesso-easing-default);
+        }
+        .menu-btn:hover { background: rgba(255,255,255,0.06); }
+        .menu-btn:active { transform: scale(0.94); }
         
-        .markdown-body { line-height: 1.6; font-size: 1rem; color: #0d0d0d; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+          width: 36px; height: 36px; border-radius: var(--gesso-radius-lg);
+          background: linear-gradient(135deg, var(--gesso-accent-2) 0%, var(--gesso-data-4) 55%, var(--gesso-accent) 100%);
+          display: flex; align-items: center; justify-content: center;
+          font-family: var(--gesso-font-display); font-weight: 700; font-size: 15px; color: var(--gesso-on-accent);
+          position: relative; overflow: hidden;
+        }
+        .brand-mark::after {
+          content: ""; position: absolute; inset: 0; padding: 0.5px; border-radius: inherit; pointer-events: none;
+          background: conic-gradient(from 135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.12));
+          -webkit-mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+          -webkit-mask-composite: xor; mask-composite: exclude;
+        }
+        .brand-name { font-family: var(--gesso-font-display); font-weight: 600; font-size: 17px; }
+        
+        .new-chat-btn {
+          width: 40px; height: 40px; border-radius: var(--gesso-radius-full);
+          background: rgba(255,255,255,0.06); border: none;
+          display: flex; align-items: center; justify-content: center; cursor: pointer;
+          transition: background var(--gesso-duration-fast) var(--gesso-easing-default);
+        }
+        .new-chat-btn:hover { background: rgba(255,255,255,0.10); }
+
+        /* SIGNATURE MOMENT */
+        .moment {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 12px; padding: 32px 16px 24px; flex: 1;
+        }
+        .mark-orbit { position: relative; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
+        .mark-orbit svg { position: absolute; inset: 0; }
+        .mark-core {
+          width: 56px; height: 56px; border-radius: var(--gesso-radius-full);
+          background: linear-gradient(135deg, var(--gesso-accent-2) 0%, var(--gesso-data-4) 50%, var(--gesso-accent) 100%);
+          display: flex; align-items: center; justify-content: center;
+          font-family: var(--gesso-font-display); font-weight: 700; font-size: 16px; color: var(--gesso-on-accent);
+          position: relative; z-index: 1;
+          animation: gesso-mark-breathe 3.2s ease-in-out infinite;
+        }
+        @keyframes gesso-mark-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes gesso-arc-lead { from { transform: rotate(0deg); } to { transform: rotate(324deg); } }
+        .arc-dot-g { animation: gesso-arc-lead 2.4s linear infinite; transform-origin: 48px 48px; }
+        .stream-caption { font-size: 12px; letter-spacing: 0.04em; color: var(--gesso-fg-muted); }
+        @keyframes gesso-caption-fade { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        .stream-caption .fading { animation: gesso-caption-fade 1.8s ease-in-out infinite; }
+
+        /* THREAD */
+        .main-col { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
+        .thread {
+          display: flex; flex-direction: column; gap: 20px; flex: 1;
+          overflow-y: auto; padding: 0 16px 140px 16px;
+        }
+        .msg-row { display: flex; gap: 12px; max-width: 800px; width: 100%; margin: 0 auto; }
+        .msg-row.user { justify-content: flex-end; }
+        .avatar-ai {
+          width: 32px; height: 32px; border-radius: var(--gesso-radius-full); flex-shrink: 0;
+          background: linear-gradient(135deg, var(--gesso-accent-2), var(--gesso-data-4));
+          display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--gesso-on-accent);
+          font-family: var(--gesso-font-display);
+        }
+        .bubble {
+          max-width: 85%; padding: 12px 16px; border-radius: var(--gesso-radius-lg);
+          font-size: 15px; line-height: 1.6;
+        }
+        .bubble.ai { background: var(--gesso-surface); color: var(--gesso-fg); border-top-left-radius: 4px; }
+        .bubble.user { background: var(--gesso-accent-2); color: var(--gesso-on-accent); border-top-right-radius: 4px; }
+        
         .markdown-body p { margin-bottom: 0.8rem; }
+        .markdown-body p:last-child { margin-bottom: 0; }
         .markdown-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.95rem; }
-        .markdown-body th, .markdown-body td { border: 1px solid #e5e5e5; padding: 8px 12px; text-align: left; }
-        .markdown-body th { background-color: #f7f7f7; font-weight: 600; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        .markdown-body th, .markdown-body td { border: 1px solid rgba(255,255,255,0.1); padding: 8px 12px; text-align: left; }
+        .markdown-body th { background-color: rgba(255,255,255,0.05); font-weight: 600; }
+        .markdown-body img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: var(--gesso-radius-md); margin-top: 12px; outline: 1px solid rgba(255,255,255,0.05); outline-offset: -1px; }
+
+        /* COMPOSER */
+        .composer-wrap {
+          position: absolute; left: 0; right: 0; bottom: 0; z-index: 200;
+          padding: 12px 16px 24px;
+          background: color-mix(in srgb, var(--gesso-canvas) 90%, transparent);
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+        .composer-inner { max-width: 800px; margin: 0 auto; }
+        .attach-row { display: flex; gap: 8px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
+        .attach-row::-webkit-scrollbar { display: none; }
+        .attach-chip {
+          flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px;
+          background: rgba(255,255,255,0.06); color: var(--gesso-fg);
+          border-radius: var(--gesso-radius-full); padding: 8px 12px; font-size: 12px; white-space: nowrap;
+        }
+        .composer {
+          display: flex; align-items: center; gap: 8px;
+          background: var(--gesso-surface-recessed); border-radius: var(--gesso-radius-full);
+          padding: 8px 8px 8px 16px;
+        }
+        .composer-icon-btn {
+          width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--gesso-radius-full);
+          background: transparent; border: none; color: var(--gesso-fg-muted);
+          display: flex; align-items: center; justify-content: center; cursor: pointer;
+          transition: background var(--gesso-duration-fast), color var(--gesso-duration-fast);
+        }
+        .composer-icon-btn:hover { background: rgba(255,255,255,0.06); color: var(--gesso-fg); }
+        .composer input {
+          flex: 1; background: transparent; border: none; outline: none;
+          font-family: var(--gesso-font-body); font-size: 15px; color: var(--gesso-fg); min-width: 0;
+        }
+        .composer input::placeholder { color: var(--gesso-fg-muted); }
+        .send-btn {
+          width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--gesso-radius-full);
+          background: var(--gesso-accent); color: var(--gesso-on-accent); border: none;
+          display: flex; align-items: center; justify-content: center; cursor: pointer;
+          transition: filter var(--gesso-duration-fast);
+        }
+        .send-btn:hover { filter: brightness(0.92); }
+
+        /* DRAWER */
+        .drawer-overlay {
+          position: fixed; inset: 0; z-index: 190; background: rgba(10,10,60,0.5);
+          opacity: 0; pointer-events: none; transition: opacity var(--gesso-duration-fast) var(--gesso-easing-default);
+        }
+        .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+        .drawer {
+          position: fixed; top: 0; bottom: 0; left: 0; width: 300px; z-index: 195;
+          background: var(--gesso-surface-recessed); padding: 48px 16px 24px;
+          display: flex; flex-direction: column; gap: 24px;
+          transform: translateX(-100%); transition: transform 220ms var(--gesso-easing-default);
+        }
+        @media (min-width: 1024px) {
+          .drawer { position: relative; transform: translateX(0); width: 300px; flex-shrink: 0; }
+          .drawer-overlay { display: none !important; }
+        }
+        .drawer.open { transform: translateX(0); }
+        
+        .drawer-header { display: flex; align-items: center; gap: 12px; }
+        .drawer-nav { display: flex; flex-direction: column; gap: 4px; }
+        .drawer-item {
+          display: flex; align-items: center; gap: 16px; padding: 12px 12px; border-radius: var(--gesso-radius-md);
+          background: transparent; border: none; color: var(--gesso-fg); font-size: 15px; font-family: var(--gesso-font-body);
+          cursor: pointer; text-align: left; width: 100%; transition: background var(--gesso-duration-fast);
+        }
+        .drawer-item:hover { background: rgba(255,255,255,0.06); }
+        .drawer-item[aria-current="true"] { background: rgba(255,255,255,0.10); }
+        
+        .drawer-section-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gesso-fg-muted); padding: 8px 12px 0; }
+        .drawer-recent { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+        .drawer-recent-item {
+          padding: 12px 12px; border-radius: var(--gesso-radius-md); font-size: 14px; color: var(--gesso-fg-muted);
+          cursor: pointer; transition: background var(--gesso-duration-fast), color var(--gesso-duration-fast);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; justify-content: space-between; align-items: center;
+        }
+        .drawer-recent-item:hover { background: rgba(255,255,255,0.05); color: var(--gesso-fg); }
+        .drawer-recent-item button { background: none; border: none; color: inherit; padding: 4px; cursor: pointer; }
+
+        .ic { display: inline-block; width: 16px; height: 16px; vertical-align: -0.125em; flex-shrink: 0; }
+        .ic svg { width: 100%; height: 100%; display: block; }
       `}</style>
 
-      {/* MOBILE BACKDROP */}
-      <div className={`backdrop ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
-
-      {/* SIDEBAR */}
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 8px 20px 8px' }}>
-            <AILogo size={24} />
-            <span style={{ fontWeight: 600, fontSize: '1.2rem', color: '#0d0d0d' }}>My AI</span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
-            <div className={`sidebar-item ${activeView === 'chat' && messages.length === 0 ? 'active-sidebar-item' : ''}`} onClick={createNewChat}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              <span>New chat</span>
-            </div>
-            <div className="sidebar-item" onClick={() => setShowSearchModal(!showSearchModal)}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <span>Search chats</span>
-            </div>
-            <div className={`sidebar-item ${activeView === 'images' ? 'active-sidebar-item' : ''}`} onClick={() => handleNavClick('images')}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-              <span>Images</span>
-            </div>
-            <div className={`sidebar-item ${activeView === 'plugins' ? 'active-sidebar-item' : ''}`} onClick={() => handleNavClick('plugins')}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/></svg>
-              <span>Plugins</span>
-            </div>
-            <div className={`sidebar-item ${activeView === 'projects' ? 'active-sidebar-item' : ''}`} onClick={() => handleNavClick('projects')}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              <span>Projects</span>
-            </div>
-            <div className={`sidebar-item ${activeView === 'library' ? 'active-sidebar-item' : ''}`} onClick={() => handleNavClick('library')}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              <span>Library</span>
-            </div>
-          </div>
-
-          {showSearchModal && (
-            <div style={{ marginBottom: '12px' }}>
-              <input type="text" placeholder="Search history..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d1d1', fontSize: '0.85rem', outline: 'none' }} />
-            </div>
-          )}
-
-          <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #ececec', paddingTop: '10px' }}>
-            <div style={{ fontSize: '0.8rem', color: '#888', fontWeight: 600, paddingLeft: '8px', marginBottom: '6px' }}>Chats</div>
-            {filteredSessions.map((s) => (
-              <div key={s.id} onClick={() => { setCurrentSessionId(s.id); handleNavClick('chat'); }} className={`sidebar-item ${s.id === currentSessionId && activeView === 'chat' ? 'active-sidebar-item' : ''}`} style={{ justifyContent: 'space-between' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
-                <button onClick={(e) => deleteChat(s.id, e)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '2px' }}>✕</button>
-              </div>
-            ))}
-          </div>
+      {/* DRAWER & OVERLAY */}
+      <div className={`drawer-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
+      
+      <nav className={`drawer ${sidebarOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
+          <div className="brand-mark">AI</div>
+          <span className="brand-name">My AI</span>
         </div>
-      </aside>
-
-      {/* MAIN CONTENT AREA */}
-      <main className="main-content">
         
-        {/* HEADER */}
-        <header style={{ height: '56px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid #f0f0f0', backgroundColor: '#fff', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
-            <span style={{ fontWeight: 600, fontSize: '1.1rem', color: '#0d0d0d' }}>My AI</span>
-          </div>
-          <div>
-            {userEmail ? (
-              <button onClick={() => { setUserEmail(null); localStorage.removeItem('my_ai_agent_user'); }} style={{ padding: '6px 12px', borderRadius: '18px', border: '1px solid #d1d1d1', backgroundColor: '#fff', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' }}>Log out</button>
-            ) : (
-              <button onClick={() => setShowAuthModal(true)} style={{ padding: '6px 14px', borderRadius: '18px', border: 'none', backgroundColor: '#0d0d0d', color: '#fff', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' }}>Log in</button>
-            )}
-          </div>
-        </header>
+        <button className="drawer-item" onClick={createNewChat} aria-current={activeView === 'chat' && messages.length === 0}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-7-7v14"/></svg> 
+          New chat
+        </button>
 
-        {/* CHAT SCROLL AREA */}
-        <div className="chat-scroll-area">
-          {activeView === 'chat' && messages.length === 0 ? (
-            <div style={{ width: '100%', maxWidth: '680px', margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ marginBottom: '24px' }}><AILogo size={64} /></div>
-              <h2 style={{ fontSize: '2rem', fontWeight: 600, color: '#0d0d0d', marginBottom: '32px' }}>Where should we begin?</h2>
+        <div className="drawer-nav">
+          <button className="drawer-item" aria-current={activeView === 'images'} onClick={() => { setActiveView('images'); closeSidebarOnMobile(); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> 
+            Images
+          </button>
+          <button className="drawer-item" aria-current={activeView === 'library'} onClick={() => { setActiveView('library'); closeSidebarOnMobile(); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg> 
+            Libraries
+          </button>
+          <button className="drawer-item" aria-current={activeView === 'projects'} onClick={() => { setActiveView('projects'); closeSidebarOnMobile(); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><g strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></g></svg> 
+            Projects
+          </button>
+        </div>
+
+        <span className="drawer-section-label">Recent</span>
+        <div className="drawer-recent">
+          {sessions.map((s) => (
+            <div key={s.id} className="drawer-recent-item" onClick={() => { setCurrentSessionId(s.id); setActiveView('chat'); closeSidebarOnMobile(); }}>
+              {s.title}
+              <button onClick={(e) => deleteChat(s.id, e)}>✕</button>
             </div>
-          ) : activeView === 'chat' ? (
-            <div style={{ width: '100%', maxWidth: '720px' }}>
-              {messages.map((msg, index) => (
-                <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: '24px', width: '100%' }}>
-                  {msg.sender === 'ai' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <AILogo size={20} />
-                      <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0d0d0d' }}>My AI</span>
-                    </div>
-                  )}
-                  <div style={{ maxWidth: msg.sender === 'user' ? '90%' : '100%', backgroundColor: msg.sender === 'user' ? '#f4f4f4' : 'transparent', padding: msg.sender === 'user' ? '12px 18px' : '0', borderRadius: msg.sender === 'user' ? '20px' : '0' }}>
+          ))}
+        </div>
+      </nav>
+
+      {/* MAIN CONTENT */}
+      <div className="main-col">
+        
+        <div className="appbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button className="menu-btn" onClick={() => setSidebarOpen(true)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 24, height: 24}}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 12h16M4 19h16"/></svg>
+            </button>
+            <div className="brand">
+              <div className="brand-mark">AI</div>
+              <span className="brand-name">My AI</span>
+            </div>
+          </div>
+          
+          <button className="new-chat-btn" onClick={createNewChat}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4"/></svg>
+          </button>
+        </div>
+
+        {activeView === 'chat' ? (
+          <div className="thread">
+            {messages.length === 0 ? (
+              <section className="moment">
+                <div className="mark-orbit">
+                  <svg viewBox="0 0 96 96" width="96" height="96">
+                    <circle cx="48" cy="48" r="42" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2"/>
+                    <g className="arc-dot-g"><circle cx="48" cy="6" r="3.5" fill="var(--gesso-accent-2)"/></g>
+                  </svg>
+                  <div className="mark-core">AI</div>
+                </div>
+                <div className="stream-caption">
+                  <span className="fading">ready for anything...</span>
+                </div>
+              </section>
+            ) : (
+              messages.map((msg, index) => (
+                <div key={index} className={`msg-row ${msg.sender}`}>
+                  {msg.sender === 'ai' && <div className="avatar-ai">AI</div>}
+                  <div className={`bubble ${msg.sender} markdown-body`}>
                     {msg.sender === 'ai' && msg.text === '' && loading ? (
-                      <div style={{ color: '#888', fontStyle: 'italic', fontSize: '0.95rem' }}>Thinking...</div>
+                      <span style={{ opacity: 0.7, fontStyle: 'italic' }}>Thinking...</span>
                     ) : (
-                      <div className="markdown-body"><ReactMarkdown>{msg.text}</ReactMarkdown></div>
+                      <ReactMarkdown>{msg.text}</ReactMarkdown>
                     )}
                   </div>
                 </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          ) : (
-            <div style={{ width: '100%', maxWidth: '720px', textAlign: 'center', color: '#666' }}>
-              <h2 style={{ fontSize: '1.5rem', color: '#0d0d0d', marginTop: '40px' }}>{activeView.charAt(0).toUpperCase() + activeView.slice(1)}</h2>
-              <p>This page is under construction.</p>
-            </div>
-          )}
-        </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        ) : (
+          <div className="thread" style={{ alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+            <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{activeView.charAt(0).toUpperCase() + activeView.slice(1)}</h2>
+            <p>Coming soon...</p>
+          </div>
+        )}
 
-        {/* INPUT AREA (Locked to bottom, ignores sidebar width issues) */}
+        {/* COMPOSER */}
         {activeView === 'chat' && (
-          <div className="input-area">
-            <div style={{ maxWidth: '720px', margin: '0 auto', backgroundColor: '#fff', border: '1px solid #e0e0e0', borderRadius: '24px', padding: '8px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button style={{ background: '#f4f4f4', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button>
-              <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message My AI..." style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1rem', padding: '6px', resize: 'none', maxHeight: '100px', minHeight: '32px', fontFamily: 'inherit' }} rows={1} />
-              <button onClick={sendMessage} disabled={!input.trim() || loading} style={{ backgroundColor: input.trim() ? '#0d0d0d' : '#e0e0e0', color: '#fff', border: 'none', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'default' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-              </button>
+          <div className="composer-wrap">
+            <div className="composer-inner">
+              
+              {attachedFile && (
+                <div className="attach-row">
+                  <span className="attach-chip">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 14, height: 14}}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> 
+                    {attachedFile}
+                    <button onClick={() => setAttachedFile(null)} style={{ border: 'none', background: 'none', color: '#fff', marginLeft: '4px', cursor: 'pointer' }}>✕</button>
+                  </span>
+                </div>
+              )}
+              
+              <div className="composer">
+                <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+                
+                <button className="composer-icon-btn" onClick={() => alert("Plugins coming soon!")}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-7-7v14"/></svg>
+                </button>
+                <button className="composer-icon-btn" onClick={() => fileInputRef.current?.click()}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg>
+                </button>
+                
+                <input 
+                  type="text" 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)} 
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
+                  placeholder="Message My AI…" 
+                />
+                
+                <button className="send-btn" onClick={sendMessage} disabled={(!input.trim() && !attachedFile) || loading}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="ic" style={{width: 18, height: 18}}><path strokeLinecap="round" strokeLinejoin="round" d="m5 12l7-7l7 7m-7 7V5"/></svg>
+                </button>
+              </div>
+              
             </div>
           </div>
         )}
-      </main>
 
-      {/* AUTH MODAL */}
-      {showAuthModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '380px', position: 'relative' }}>
-            <button onClick={() => setShowAuthModal(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>✕</button>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 600, color: '#0d0d0d', marginBottom: '8px', textAlign: 'center' }}>{authMode === 'login' ? 'Welcome back' : 'Create an account'}</h3>
-            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '20px' }}>
-              <input type="email" required onChange={(e) => setUserEmail(e.target.value)} placeholder="Email address" style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '0.95rem', outline: 'none' }} />
-              <input type="password" required placeholder="Password" style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '0.95rem', outline: 'none' }} />
-              <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: '#0d0d0d', color: '#fff', fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer' }}>Continue</button>
-            </form>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
