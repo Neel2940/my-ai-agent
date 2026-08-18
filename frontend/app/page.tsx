@@ -92,6 +92,15 @@ export default function Home() {
     closeSidebarOnMobile();
   };
 
+  const deleteChat = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = sessions.filter((s) => s.id !== id);
+    setSessions(updated);
+    if (updated.length > 0) {
+      if (currentSessionId === id) setCurrentSessionId(updated[0].id);
+    } else createNewChat();
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) setAttachedFile(file.name);
