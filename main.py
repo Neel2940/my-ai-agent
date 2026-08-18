@@ -151,7 +151,7 @@ def smart_chat(req: ChatRequest):
     is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
     # The master model. Mixtral is used because it has a massive memory context window for reading full webpages
-    MODEL_NAME = "mixtral-8x7b-32768"
+    MODEL_NAME = "llama-3.1-8b-instant"
 
     # =========================================================
     # ROUTE A: AI ART GENERATOR
