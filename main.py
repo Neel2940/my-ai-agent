@@ -151,7 +151,22 @@ def smart_chat(req: ChatRequest):
     is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
     # The master model. Mixtral is used because it has a massive memory context window for reading full webpages
-    MODEL_NAME = "gemma2-9b-it"
+    # ---------------------------------------------------------
+    # DYNAMIC MODEL SELECTOR (Immune to decommissioning)
+    # ---------------------------------------------------------
+    MODEL_NAME = "llama3-8b-8192" # Safe fallback
+    if client:
+        try:
+            # Ask Groq for a live list of all currently active models
+            active_models = client.models.list().data
+            # Filter out audio models (like whisper) so we only get text brains
+            text_models = [m.id for m in active_models if "whisper" not in m.id.lower()]
+            if text_models:
+                # Prioritize a Llama 3 model if available, otherwise take the first active one
+                llama_models = [m for m in text_models if "llama" in m.lower()]
+                MODEL_NAME = llama_models[0] if llama_models else text_models[0]
+        except Exception:
+            pass
 
     # =========================================================
     # ROUTE A: AI ART GENERATOR
