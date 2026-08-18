@@ -96,7 +96,7 @@ def extract_clean_subject(text: str) -> str:
 
 @app.get("/")
 def home():
-    return {"status": "Backend online with multi-image search capabilities."}
+    return {"status": "Backend online with stable GPT-OSS 20B inference."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -137,7 +137,7 @@ def smart_chat(req: ChatRequest):
             yield f"Here is your generated AI image:\n\n{img_markdown}"
         return StreamingResponse(generate_art(), media_type="text/event-stream")
 
-    # ROUTE 2: REAL WEB PHOTOS (Supports Multi-Image Requests)
+    # ROUTE 2: REAL WEB PHOTOS
     elif is_image_request:
         num_images = 1
         if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
@@ -145,17 +145,14 @@ def smart_chat(req: ChatRequest):
         elif any(w in latest_msg_lower for w in ["four", "4"]): num_images = 4
         elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more", "multiple"]): num_images = 3
 
-        # Clean search subject
         clean_search = extract_clean_subject(latest_msg)
-
-        # Context fallback if user just said "give me three more"
         if not clean_search and len(history) >= 2:
             clean_search = extract_clean_subject(history[-2]["content"])
 
         if client and len(clean_search.split()) > 4:
             try:
                 opt_res = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="openai/gpt-oss-20b",
                     messages=[{"role": "user", "content": f"Extract ONLY the core person or item name for an image search. Return 1-3 words only (e.g. 'Lamine Yamal'). Prompt: {latest_msg}"}],
                     temperature=0.0
                 )
@@ -178,7 +175,6 @@ def smart_chat(req: ChatRequest):
         except Exception:
             pass
 
-        # Multi-image fallback guarantee
         if len(img_list) < num_images:
             query_encoded = urllib.parse.quote_plus(clean_search)
             for i in range(len(img_list), num_images):
@@ -202,7 +198,7 @@ def smart_chat(req: ChatRequest):
         def generate_live():
             try:
                 opt_res = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="openai/gpt-oss-20b",
                     messages=[{"role": "user", "content": f"Convert this request into a concise Google/Wikipedia search query. Return ONLY the search terms: {latest_msg}"}],
                     temperature=0.0
                 )
@@ -234,7 +230,7 @@ def smart_chat(req: ChatRequest):
                 )
 
                 stream = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": latest_msg}
@@ -264,7 +260,7 @@ def smart_chat(req: ChatRequest):
                     "You are a highly capable AI Assistant. Answer clearly and factually without referencing knowledge cutoffs."
                 )
                 stream = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="openai/gpt-oss-20b",
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     temperature=0.6,
                     stream=True
