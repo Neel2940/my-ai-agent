@@ -88,9 +88,15 @@ def search_wikipedia_direct(entity: str) -> str:
     except Exception:
         return ""
 
+def extract_clean_subject(text: str) -> str:
+    """Removes conversational filler to isolate the core subject."""
+    clean = re.sub(r'(?i)\b(give|show|send|get|fetch|me|please|can|you|the|an|a|some|more|another|pictures?|images?|photos?|pics?|imgs?|of|for|about|one|two|three|four|five|2|3|4|5)\b', '', text)
+    clean = re.sub(r'[^\w\s]', '', clean).strip()
+    return clean if clean else text.strip()
+
 @app.get("/")
 def home():
-    return {"status": "Backend online with stable Llama 3 8B inference."}
+    return {"status": "Backend online with multi-image search capabilities."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -105,6 +111,7 @@ def smart_chat(req: ChatRequest):
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
 
+    # Track seen images to avoid showing the same picture again
     seen_image_urls = set()
     for msg in history:
         if msg["role"] == "assistant":
@@ -117,8 +124,6 @@ def smart_chat(req: ChatRequest):
 
     image_pattern = r'\b(image|images|photo|photos|picture|pictures|pic|pics|img|imgs|draw|paint)\b'
     has_image_keyword = bool(re.search(image_pattern, latest_msg_lower))
-    
-    # FIXED SUBSTRING BUG: Use regex word boundaries so "image" doesn't accidentally trigger "age"
     factual_pattern = r'\b(age|how old|height|net worth|born|who is|what is|when|where|explain|squad|roster|team|club|score|players)\b'
     has_factual_intent = bool(re.search(factual_pattern, latest_msg_lower))
 
@@ -132,43 +137,61 @@ def smart_chat(req: ChatRequest):
             yield f"Here is your generated AI image:\n\n{img_markdown}"
         return StreamingResponse(generate_art(), media_type="text/event-stream")
 
-    # ROUTE 2: REAL WEB PHOTOS
+    # ROUTE 2: REAL WEB PHOTOS (Supports Multi-Image Requests)
     elif is_image_request:
         num_images = 1
         if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
         elif any(w in latest_msg_lower for w in ["three", "3"]): num_images = 3
-        elif any(w in latest_msg_lower for w in ["four", "4", "five", "5", "more", "multiple"]): num_images = 4
+        elif any(w in latest_msg_lower for w in ["four", "4"]): num_images = 4
+        elif any(w in latest_msg_lower for w in ["five", "5", "some", "few", "more", "multiple"]): num_images = 3
 
-        clean_search = latest_msg
-        if client:
+        # Clean search subject
+        clean_search = extract_clean_subject(latest_msg)
+
+        # Context fallback if user just said "give me three more"
+        if not clean_search and len(history) >= 2:
+            clean_search = extract_clean_subject(history[-2]["content"])
+
+        if client and len(clean_search.split()) > 4:
             try:
                 opt_res = client.chat.completions.create(
                     model="llama3-8b-8192",
-                    messages=[{"role": "user", "content": f"Extract ONLY the main subject for image search from this text (e.g. 'Cristiano Ronaldo'): {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Extract ONLY the core person or item name for an image search. Return 1-3 words only (e.g. 'Lamine Yamal'). Prompt: {latest_msg}"}],
                     temperature=0.0
                 )
-                clean_search = opt_res.choices[0].message.content.strip(' "\'.\n')
+                extracted = opt_res.choices[0].message.content.strip(' "\'.\n')
+                if extracted and len(extracted) < 30:
+                    clean_search = extracted
             except Exception:
                 pass
 
-        combined_images = ""
+        img_list = []
         try:
-            results = DDGS().images(clean_search, max_results=30)
+            results = DDGS().images(clean_search, max_results=40)
             if results:
-                fresh_images = [res for res in results if res.get('image') not in seen_image_urls]
-                if fresh_images:
-                    random.shuffle(fresh_images)
-                    selected_images = fresh_images[:num_images]
-                    combined_images = "\n\n".join([f"![IMAGE]({res['image']})" for res in selected_images])
+                for res in results:
+                    img_url = res.get('image')
+                    if img_url and img_url not in seen_image_urls and img_url not in img_list:
+                        img_list.append(img_url)
+                        if len(img_list) >= num_images:
+                            break
         except Exception:
             pass
 
-        if not combined_images:
+        # Multi-image fallback guarantee
+        if len(img_list) < num_images:
             query_encoded = urllib.parse.quote_plus(clean_search)
-            combined_images = f"![IMAGE](https://tse1.mm.bing.net/th?q={query_encoded})"
+            for i in range(len(img_list), num_images):
+                fallback_url = f"https://tse1.mm.bing.net/th?q={query_encoded}&w=600&h=400&c=7&rs=1&p=0&dpr=1&pid=1.7&mkt=en-US&adlt=moderate&t={i+1}"
+                img_list.append(fallback_url)
+
+        img_markdowns = [f"![IMAGE]({url})" for url in img_list]
+        combined_images = "\n\n".join(img_markdowns)
+
+        title_subject = clean_search.title() if clean_search else "your request"
 
         def generate_images():
-            yield f"Here are your pictures of {clean_search}:\n\n{combined_images}"
+            yield f"Here are {len(img_list)} pictures of {title_subject}:\n\n{combined_images}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ROUTE 3: WEB SEARCH & LIVE KNOWLEDGE
@@ -180,13 +203,12 @@ def smart_chat(req: ChatRequest):
             try:
                 opt_res = client.chat.completions.create(
                     model="llama3-8b-8192",
-                    messages=[{"role": "user", "content": f"Convert this request into a concise Google/Wikipedia search query. If it is a football/sports squad request, format as '[Club Name] current first team squad'. Return ONLY the search terms: {latest_msg}"}],
+                    messages=[{"role": "user", "content": f"Convert this request into a concise Google/Wikipedia search query. Return ONLY the search terms: {latest_msg}"}],
                     temperature=0.0
                 )
                 search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
 
                 context_data = ""
-                
                 if bool(re.search(r'\b(squad|roster|team|club|who is)\b', latest_msg_lower)):
                     wiki_data = search_wikipedia_direct(search_term)
                     if wiki_data:
@@ -205,17 +227,10 @@ def smart_chat(req: ChatRequest):
                     "You are a top-tier, world-class AI Assistant designed to deliver comprehensive, accurate responses.\n\n"
                     "STYLE & FORMATTING DIRECTIVES:\n"
                     "1. FOR SQUADS & ROSTERS:\n"
-                    "   - State the official club name and season clearly.\n"
-                    "   - Group players neatly by position using emoji headings:\n"
-                    "     🥅 Goalkeepers\n"
-                    "     🛡️ Defenders\n"
-                    "     ⚽ Midfielders\n"
-                    "     🔥 Forwards\n"
-                    "   - Format each player as: • Player Name — #JerseyNumber (or position if number unavailable).\n"
-                    "   - Add the Manager name and any recent major titles/achievements at the bottom.\n"
-                    "2. ABSOLUTE ACCURACY: Use the provided context data to populate the exact current players. Never mention 'knowledge cutoff' or 'December 2023'.\n"
-                    "3. TONE: Confident, polished, and structured, matching ChatGPT's response quality.\n\n"
-                    f"CONTEXT DATA:\n{context_data if context_data else 'Use your up-to-date knowledge base.'}"
+                    "   - Group players by position using emoji headings (🥅 Goalkeepers, 🛡️ Defenders, ⚽ Midfielders, 🔥 Forwards).\n"
+                    "   - Format: • Player Name — #JerseyNumber.\n"
+                    "2. ACCURACY: Use provided data, never mention a knowledge cutoff.\n"
+                    f"\nCONTEXT DATA:\n{context_data if context_data else 'Use your up-to-date knowledge base.'}"
                 )
 
                 stream = client.chat.completions.create(
@@ -246,8 +261,7 @@ def smart_chat(req: ChatRequest):
             try:
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
-                    "You are a highly capable and intelligent AI Assistant.\n"
-                    "Answer clearly, thoroughly, and factually. Never mention a 2023 knowledge cutoff."
+                    "You are a highly capable AI Assistant. Answer clearly and factually without referencing knowledge cutoffs."
                 )
                 stream = client.chat.completions.create(
                     model="llama3-8b-8192",
