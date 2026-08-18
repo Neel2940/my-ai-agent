@@ -90,7 +90,7 @@ def search_wikipedia_direct(entity: str) -> str:
 
 @app.get("/")
 def home():
-    return {"status": "Backend online with Llama 3.1 inference."}
+    return {"status": "Backend online with stable Llama 3 8B inference."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -117,13 +117,15 @@ def smart_chat(req: ChatRequest):
 
     image_pattern = r'\b(image|images|photo|photos|picture|pictures|pic|pics|img|imgs|draw|paint)\b'
     has_image_keyword = bool(re.search(image_pattern, latest_msg_lower))
-    factual_keywords = ["age", "how old", "height", "net worth", "born", "who is", "what is", "when", "where", "explain", "squad", "roster", "team", "club", "score", "players"]
-    has_factual_intent = any(k in latest_msg_lower for k in factual_keywords)
+    
+    # FIXED SUBSTRING BUG: Use regex word boundaries so "image" doesn't accidentally trigger "age"
+    factual_pattern = r'\b(age|how old|height|net worth|born|who is|what is|when|where|explain|squad|roster|team|club|score|players)\b'
+    has_factual_intent = bool(re.search(factual_pattern, latest_msg_lower))
 
     is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
 
     # ROUTE 1: AI ART GENERATION
-    if any(k in latest_msg_lower for k in ["generate", "draw", "create image", "paint"]) and not has_factual_intent:
+    if bool(re.search(r'\b(generate|draw|create image|paint)\b', latest_msg_lower)) and not has_factual_intent:
         prompt_encoded = urllib.parse.quote_plus(latest_msg)
         img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded})"
         def generate_art():
@@ -141,7 +143,7 @@ def smart_chat(req: ChatRequest):
         if client:
             try:
                 opt_res = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",
+                    model="llama3-8b-8192",
                     messages=[{"role": "user", "content": f"Extract ONLY the main subject for image search from this text (e.g. 'Cristiano Ronaldo'): {latest_msg}"}],
                     temperature=0.0
                 )
@@ -170,18 +172,14 @@ def smart_chat(req: ChatRequest):
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
     # ROUTE 3: WEB SEARCH & LIVE KNOWLEDGE
-    elif any(k in latest_msg_lower for k in [
-        "search", "latest", "news", "current", "today", "now", "present",
-        "squad", "roster", "team", "club", "won", "score", "price", "who is", "what is",
-        "age", "born", "2024", "2025", "2026", "stats", "players"
-    ]):
+    elif bool(re.search(r'\b(search|latest|news|current|today|now|present|squad|roster|team|club|won|score|price|who is|what is|age|born|2024|2025|2026|stats|players)\b', latest_msg_lower)):
         if not client:
             return StreamingResponse(iter(["⚠️ GROQ_API_KEY missing."]), media_type="text/event-stream")
 
         def generate_live():
             try:
                 opt_res = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",
+                    model="llama3-8b-8192",
                     messages=[{"role": "user", "content": f"Convert this request into a concise Google/Wikipedia search query. If it is a football/sports squad request, format as '[Club Name] current first team squad'. Return ONLY the search terms: {latest_msg}"}],
                     temperature=0.0
                 )
@@ -189,7 +187,7 @@ def smart_chat(req: ChatRequest):
 
                 context_data = ""
                 
-                if any(w in latest_msg_lower for w in ["squad", "roster", "team", "club", "who is"]):
+                if bool(re.search(r'\b(squad|roster|team|club|who is)\b', latest_msg_lower)):
                     wiki_data = search_wikipedia_direct(search_term)
                     if wiki_data:
                         context_data += f"--- WIKIPEDIA SQUAD & PROFILE DATA ---\n{wiki_data}\n\n"
@@ -221,7 +219,7 @@ def smart_chat(req: ChatRequest):
                 )
 
                 stream = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",
+                    model="llama3-8b-8192",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": latest_msg}
@@ -252,7 +250,7 @@ def smart_chat(req: ChatRequest):
                     "Answer clearly, thoroughly, and factually. Never mention a 2023 knowledge cutoff."
                 )
                 stream = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",
+                    model="llama3-8b-8192",
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     temperature=0.6,
                     stream=True
