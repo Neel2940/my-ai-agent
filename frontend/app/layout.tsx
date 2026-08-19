@@ -4,9 +4,11 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "My AI Agent",
-  description: "My custom intelligent AI assistant",
+export const metadata = {
+  title: "Opus AI",
+  description: "Your minimalist, highly capable AI assistant.",
+  manifest: "/manifest.json",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({
