@@ -154,17 +154,29 @@ def smart_chat(req: ChatRequest):
     # ---------------------------------------------------------
     # DYNAMIC MODEL SELECTOR (Immune to decommissioning)
     # ---------------------------------------------------------
+    # BULLETPROOF MODEL SELECTOR (Ignores Guard/Classification Models)
+    # ---------------------------------------------------------
     MODEL_NAME = "llama3-8b-8192" # Safe fallback
     if client:
         try:
-            # Ask Groq for a live list of all currently active models
-            active_models = client.models.list().data
-            # Filter out audio models (like whisper) so we only get text brains
-            text_models = [m.id for m in active_models if "whisper" not in m.id.lower()]
-            if text_models:
-                # Prioritize a Llama 3 model if available, otherwise take the first active one
-                llama_models = [m for m in text_models if "llama" in m.lower()]
-                MODEL_NAME = llama_models[0] if llama_models else text_models[0]
+            # Grab all currently active models on Groq's servers
+            active_models = [m.id for m in client.models.list().data]
+            
+            # Our VIP list of guaranteed conversational models (ranked best to worst)
+            vip_models = [
+                "llama-3.1-70b-versatile",
+                "llama-3.1-8b-instant",
+                "llama3-70b-8192",
+                "llama3-8b-8192",
+                "gemma2-9b-it",
+                "mixtral-8x7b-32768"
+            ]
+            
+            # Lock in the highest-ranked model that is currently online!
+            for model in vip_models:
+                if model in active_models:
+                    MODEL_NAME = model
+                    break
         except Exception:
             pass
 
