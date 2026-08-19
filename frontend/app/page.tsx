@@ -15,16 +15,10 @@ interface ChatSession {
   createdAt: number;
 }
 
-// ---------------------------------------------------------
-// NEW CUSTOM LOGO: Exact match to your reference image!
-// ---------------------------------------------------------
 const AILogo = ({ size = 24 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round">
-    {/* Dot inside 'a' */}
     <circle cx="35" cy="45" r="8" />
-    {/* Dot above 'i' */}
     <circle cx="75" cy="25" r="8" />
-    {/* Continuous flowing line forming 'a' and 'i' */}
     <path d="M 55 55 L 25 75 C 10 85, 5 65, 5 45 C 5 15, 20 5, 40 5 C 60 5, 60 25, 60 45 L 60 70 C 60 90, 85 90, 85 70 L 85 50" />
   </svg>
 );
@@ -46,9 +40,8 @@ export default function Home() {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
-  // Update Tab Icon to the new logo
   useEffect(() => {
-    document.title = "My AI";
+    document.title = "Opus AI";
     const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement || document.createElement('link');
     link.type = 'image/svg+xml';
     link.rel = 'icon';
@@ -185,7 +178,6 @@ export default function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap');
 
         :root {
-          /* CLAUDE MINIMAL THEME */
           --gesso-canvas: #FFFFFF;
           --gesso-surface: #FFFFFF;
           --gesso-surface-recessed: #F9F9F9;
@@ -333,6 +325,7 @@ export default function Home() {
           background: #FFFFFF; border: 1px solid #D1D1D1; box-shadow: 0 2px 6px rgba(0,0,0,0.02);
         }
 
+        /* NEW ICON LAYOUT */
         .composer-icons { display: flex; gap: 4px; flex-shrink: 0; align-items: center; padding-bottom: 2px; }
         .icon-btn {
           width: 32px; height: 32px; border-radius: var(--gesso-radius-full);
@@ -413,7 +406,6 @@ export default function Home() {
         .hist-pill button:hover { color: #000; }
       `}</style>
 
-      {/* DRAWER & OVERLAY */}
       <div className={`drawer-scrim ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
       
       <aside className={`drawer ${sidebarOpen ? 'open' : ''}`}>
@@ -452,7 +444,6 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
       <div className="main-col">
         
         <header className="topbar">
@@ -460,7 +451,7 @@ export default function Home() {
             <button className="menu-btn" onClick={() => setSidebarOpen(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{width: 20, height: 20}}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
-            <div className="app-name">My AI</div>
+            <div className="app-name">Opus AI</div>
           </div>
           
           <button className="new-chat-btn" onClick={createNewChat}>
@@ -504,7 +495,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* COMPOSER */}
         {activeView === 'chat' && (
           <div className="composer-wrap">
             <div className="composer-inner">
@@ -525,6 +515,9 @@ export default function Home() {
                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
                 
                 <div className="composer-icons">
+                  <button className="icon-btn" onClick={() => alert("Plugins coming soon!")}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 20, height: 20 }}><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14"/></svg>
+                  </button>
                   <button className="icon-btn" onClick={() => fileInputRef.current?.click()}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 18, height: 18 }}><path strokeLinecap="round" strokeLinejoin="round" d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg>
                   </button>
@@ -540,7 +533,7 @@ export default function Home() {
                 />
                 
                 <button className="send-btn" onClick={sendMessage} disabled={(!input.trim() && !attachedFile) || loading}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 18, height: 18 }}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-7-7v14"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 18, height: 18 }}><path strokeLinecap="round" strokeLinejoin="round" d="m5 12l7-7l7 7m-7 7V5"/></svg>
                 </button>
               </div>
               <div style={{ textAlign: 'center', fontSize: '11px', color: '#999', marginTop: '8px' }}>
