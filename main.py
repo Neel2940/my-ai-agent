@@ -139,7 +139,7 @@ def smart_chat(req: ChatRequest):
                 try:
                     opt_res = client.chat.completions.create(
                         model=MODEL_NAME,
-                        messages=[{"role": "user", "content": f"Convert this message into a short Google search query to find recent facts. If no search is needed, reply exactly with 'NO_SEARCH'. Message: {latest_msg}"}],
+                        messages=[{"role": "user", "content": f"Convert this message into a short Google search query to find any real-world facts, dates, statistics, or current events. If it is just a casual greeting (like 'hi'), reply exactly with 'NO_SEARCH'. Message: {latest_msg}"}],
                         temperature=0.0
                     )
                     search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
