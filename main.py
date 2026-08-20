@@ -2,7 +2,6 @@ import os
 import re
 import urllib.parse
 import datetime
-import random
 import requests
 from bs4 import BeautifulSoup
 from fastapi import FastAPI
@@ -14,9 +13,7 @@ from duckduckgo_search import DDGS
 
 app = FastAPI()
 
-# ---------------------------------------------------------
-# 1. SERVER CONFIGURATION & CORS
-# ---------------------------------------------------------
+# --- 1. SERVER CONFIGURATION ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,84 +29,44 @@ class MessageItem(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
 
-# ---------------------------------------------------------
-# 2. THE REAL-TIME DATA EXTRACTION ENGINE
-# ---------------------------------------------------------
+# --- 2. CRASH-PROOF WEB SCRAPING ENGINE ---
 def clean_scraped_text(text: str) -> str:
-    """Removes Wikipedia citation brackets like [1], [2] and excess whitespace."""
     text = re.sub(r'\[\d+\]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 def fetch_webpage_content(url: str) -> str:
-    """Visits a live URL and extracts the readable text, completely bypassing ads and HTML code."""
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=8)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code != 200:
             return ""
-        
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        # EXTREMELY AGGRESSIVE TABLE SNIFFER (For Sports Rosters, Stats, and Financials)
+        
         roster_data = ""
         for table in soup.find_all('table'):
             table_text = table.get_text(separator=' ', strip=True).lower()
-            # If the table looks like structured data, rip it out and format it safely
-            if any(w in table_text for w in ['player', 'name', 'team', 'date']) and any(w in table_text for w in ['pos', 'position', 'nat', 'nation', 'no.', 'number', 'squad', 'score']):
+            if any(w in table_text for w in ['player', 'name']) and any(w in table_text for w in ['pos', 'number', 'squad']):
                 for row in table.find_all('tr'):
                     roster_data += row.get_text(separator=' | ', strip=True) + "\n"
-                roster_data += "\n"
-
-        # Destroy useless web elements to save AI memory
+        
         for element in soup(["script", "style", "nav", "footer", "header", "noscript", "aside"]):
             element.decompose()
-
-        main_text = soup.get_text(separator=' ')
-        clean_main = clean_scraped_text(main_text)
-
-        # Feed the tables explicitly to the AI at the very top
-        final_text = f"--- CRITICAL STRUCTURED DATA FROM PAGE ---\n{roster_data}\n--- MAIN PAGE TEXT ---\n{clean_main}"
-        return final_text[:15000] # Provide up to 15,000 characters of live data
+            
+        main_text = clean_scraped_text(soup.get_text(separator=' '))
+        return f"{roster_data}\n\n{main_text}"[:8000]
     except Exception:
-        return ""
-
-def search_wikipedia_direct(entity: str) -> str:
-    """Directly queries the official Wikipedia API to guarantee we find the right page."""
-    try:
-        search_term = entity.strip()
-        # Auto-correct for football clubs to ensure we don't get Esports or youth teams
-        if not any(w in search_term.lower() for w in ["fc", "f.c.", "club"]) and "madrid" in search_term.lower() or "barcelona" in search_term.lower() or "psg" in search_term.lower():
-            search_term += " F.C."
-
-        api_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(search_term)}&utf8=&format=json"
-        res = requests.get(api_url, headers={'User-Agent': 'MyAIAgent/2.0'}, timeout=5).json()
-
-        results = res.get("query", {}).get("search", [])
-        if not results:
-            return ""
-
-        # Grab the absolute top result's title
-        selected_title = results[0]["title"]
-        page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(selected_title.replace(' ', '_'))}"
-        return fetch_webpage_content(page_url)
-    except Exception:
+        # If the website blocks us, fail silently so the app doesn't crash
         return ""
 
 def extract_clean_subject(text: str) -> str:
-    """AI natural language processor: Strips conversational words to find the true search subject."""
-    clean = re.sub(r'(?i)\b(give|show|send|get|fetch|me|please|can|you|the|an|a|some|more|another|pictures?|images?|photos?|pics?|imgs?|of|for|about|one|two|three|four|five|2|3|4|5)\b', '', text)
-    clean = re.sub(r'[^\w\s]', '', clean).strip()
-    return clean if clean else text.strip()
+    clean = re.sub(r'(?i)\b(give|show|send|get|fetch|me|please|can|you|the|an|a|some|more|another|pictures?|images?|photos?|pics?|imgs?|of|for|about)\b', '', text)
+    return re.sub(r'[^\w\s]', '', clean).strip() or text.strip()
 
-# ---------------------------------------------------------
-# 3. FASTAPI ROUTING
-# ---------------------------------------------------------
+# --- 3. CORE CHAT ROUTE ---
 @app.get("/")
 def home():
-    return {"status": "Ultimate Real-Time AI Agent Online."}
+    return {"status": "Opus AI API Online."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
@@ -119,207 +76,108 @@ def smart_chat(req: ChatRequest):
     history = [{"role": m.role, "content": m.content} for m in req.messages]
     latest_msg = history[-1]["content"].strip()
     latest_msg_lower = latest_msg.lower()
-
-    # The AI must know exactly what day it is right now to answer accurately
+    
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
     api_key = os.environ.get("GROQ_API_KEY")
     client = Groq(api_key=api_key) if api_key else None
+    
+    if not client:
+        return StreamingResponse(iter(["⚠️ Error: GROQ_API_KEY is missing from your server environment."]), media_type="text/event-stream")
 
-    # Track seen images to avoid showing the user the exact same picture twice
-    seen_image_urls = set()
-    for msg in history:
-        if msg["role"] == "assistant":
-            for url in re.findall(r'!\[IMAGE\]\((.*?)\)', msg["content"]):
-                seen_image_urls.add(url)
+    # --- THE BULLETPROOF MODEL SELECTOR ---
+    MODEL_NAME = "llama-3.3-70b-versatile" # Default rock-solid model
+    try:
+        active_models_data = client.models.list().data
+        live_model_ids = [m.id for m in active_models_data]
+        
+        # Strip out non-conversational models to prevent crashes
+        valid_chat_models = [
+            m for m in live_model_ids 
+            if "whisper" not in m.lower() and "guard" not in m.lower() and "vision" not in m.lower() and "tts" not in m.lower()
+        ]
+        
+        if valid_chat_models:
+            # Target the absolute best production models available on Groq
+            if "llama-3.3-70b-versatile" in valid_chat_models:
+                MODEL_NAME = "llama-3.3-70b-versatile"
+            elif "openai/gpt-oss-20b" in valid_chat_models:
+                MODEL_NAME = "openai/gpt-oss-20b"
+            elif "llama-3.1-8b-instant" in valid_chat_models:
+                MODEL_NAME = "llama-3.1-8b-instant"
+            else:
+                llamas = [m for m in valid_chat_models if "llama" in m.lower()]
+                MODEL_NAME = llamas[0] if llamas else valid_chat_models[0]
+    except Exception:
+        pass
 
-    # Contextual awareness: Did the user just ask for an image in the previous turn?
-    prev_was_image = False
-    if len(history) >= 2:
-        prev_was_image = "![IMAGE]" in history[-2]["content"] or "pictures of" in history[-2]["content"]
-
-    # ---------------------------------------------------------
-    # 4. INTENT CLASSIFICATION (The Agent's Brain)
-    # ---------------------------------------------------------
-    image_pattern = r'\b(image|images|photo|photos|picture|pictures|pic|pics|img|imgs|draw|paint)\b'
-    has_image_keyword = bool(re.search(image_pattern, latest_msg_lower))
-
-    # Words that definitively prove the user wants real-world, factual data
-    factual_pattern = r'\b(age|how old|height|net worth|born|who is|what is|when|where|explain|squad|roster|team|club|score|players|stats|latest|current|present|news|today|update|price|match|game)\b'
-    has_factual_intent = bool(re.search(factual_pattern, latest_msg_lower))
-
-    is_image_request = (has_image_keyword or (prev_was_image and any(k in latest_msg_lower for k in ["another", "more", "next"]))) and not has_factual_intent
-
-    # The master model. Mixtral is used because it has a massive memory context window for reading full webpages
-    # ---------------------------------------------------------
-    # DYNAMIC MODEL SELECTOR (Immune to decommissioning)
-    # ---------------------------------------------------------
-    # BULLETPROOF MODEL SELECTOR (Ignores Guard/Classification Models)
-    # ---------------------------------------------------------
-    MODEL_NAME = "llama3-8b-8192" # Safe fallback
-    if client:
-        try:
-            # Grab all currently active models on Groq's servers
-            active_models = [m.id for m in client.models.list().data]
-            
-            # Our VIP list of guaranteed conversational models (ranked best to worst)
-            vip_models = [
-                "llama-3.1-70b-versatile",
-                "llama-3.1-8b-instant",
-                "llama3-70b-8192",
-                "llama3-8b-8192",
-                "gemma2-9b-it",
-                "mixtral-8x7b-32768"
-            ]
-            
-            # Lock in the highest-ranked model that is currently online!
-            for model in vip_models:
-                if model in active_models:
-                    MODEL_NAME = model
-                    break
-        except Exception:
-            pass
-
-    # =========================================================
-    # ROUTE A: AI ART GENERATOR
-    # =========================================================
-    if bool(re.search(r'\b(generate|draw|create image|paint)\b', latest_msg_lower)) and not has_factual_intent:
-        prompt_encoded = urllib.parse.quote_plus(latest_msg)
-        img_markdown = f"![IMAGE](https://image.pollinations.ai/prompt/{prompt_encoded})"
-        def generate_art():
-            yield f"Here is your generated AI image:\n\n{img_markdown}"
-        return StreamingResponse(generate_art(), media_type="text/event-stream")
-
-    # =========================================================
-    # ROUTE B: LIVE WEB PHOTO ENGINE
-    # =========================================================
-    elif is_image_request:
-        num_images = 1
-        if any(w in latest_msg_lower for w in ["two", "2"]): num_images = 2
-        elif any(w in latest_msg_lower for w in ["three", "3"]): num_images = 3
-        elif any(w in latest_msg_lower for w in ["four", "4", "five", "5", "more", "multiple"]): num_images = 3
-
+    # --- ROUTING LOGIC ---
+    
+    # 1. IMAGE REQUEST
+    if bool(re.search(r'\b(image|images|photo|photos|picture|pictures|pic|pics)\b', latest_msg_lower)) and not bool(re.search(r'\b(age|squad|team|stats|who|what|where)\b', latest_msg_lower)):
         clean_search = extract_clean_subject(latest_msg)
-        if not clean_search and len(history) >= 2:
-            clean_search = extract_clean_subject(history[-2]["content"])
-
-        # Ask the LLM to perfect the search string if it's too messy
-        if client and len(clean_search.split()) > 4:
-            try:
-                opt_res = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": f"Extract ONLY the core person or item name for an image search. Return 1-3 words only. Prompt: {latest_msg}"}],
-                    temperature=0.0
-                )
-                extracted = opt_res.choices[0].message.content.strip(' "\'.\n')
-                if extracted and len(extracted) < 30:
-                    clean_search = extracted
-            except Exception:
-                pass
-
         img_list = []
         try:
-            # Tap into DuckDuckGo's live image server
-            results = DDGS().images(clean_search, max_results=40)
-            if results:
-                for res in results:
-                    img_url = res.get('image')
-                    if img_url and img_url not in seen_image_urls and img_url not in img_list:
-                        img_list.append(img_url)
-                        if len(img_list) >= num_images:
-                            break
+            results = DDGS().images(clean_search, max_results=3)
+            for res in results:
+                if res.get('image'): img_list.append(res['image'])
         except Exception:
-            pass
-
-        # Failsafe Image Generator if DuckDuckGo blocks the request
-        if len(img_list) < num_images:
+            # Backup image generator if DuckDuckGo fails
             query_encoded = urllib.parse.quote_plus(clean_search)
-            for i in range(len(img_list), num_images):
-                fallback_url = f"https://tse1.mm.bing.net/th?q={query_encoded}&w=600&h=400&c=7&rs=1&p=0&dpr=1&pid=1.7&mkt=en-US&adlt=moderate&t={i+1}"
-                img_list.append(fallback_url)
-
-        combined_images = "\n\n".join([f"![IMAGE]({url})" for url in img_list])
-        title_subject = clean_search.title() if clean_search else "your request"
-
-        def generate_images():
-            yield f"Here are {len(img_list)} pictures of {title_subject}:\n\n{combined_images}"
+            img_list = [f"https://tse1.mm.bing.net/th?q={query_encoded}&w=600&h=400&c=7&rs=1&p=0&dpr=1&pid=1.7&mkt=en-US&adlt=moderate&t={i}" for i in range(1, 4)]
+            
+        combined = "\n\n".join([f"![IMAGE]({url})" for url in img_list[:3]])
+        def generate_images(): yield f"Here are pictures of {clean_search.title()}:\n\n{combined}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # =========================================================
-    # ROUTE C: THE AUTONOMOUS REAL-TIME WEB SCRAPER
-    # =========================================================
+    # 2. UNIVERSAL CHAT & REAL-TIME SEARCH
     else:
-        if not client:
-            return StreamingResponse(iter(["⚠️ GROQ_API_KEY missing from server environment."]), media_type="text/event-stream")
-
         def generate_universal_chat():
             try:
-                # STEP 1: The AI acts as a search strategist. It decides exactly what to Google.
-                opt_res = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": f"Convert this user message into a highly effective, concise Google search query to find the most up-to-date real world information. If no search is needed (e.g., general greeting 'hi' or simple math), reply exactly with 'NO_SEARCH'. Message: {latest_msg}"}],
-                    temperature=0.0
-                )
-                search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
+                # Ask the AI what to search
+                search_term = "NO_SEARCH"
+                try:
+                    opt_res = client.chat.completions.create(
+                        model=MODEL_NAME,
+                        messages=[{"role": "user", "content": f"Convert this message into a short Google search query to find recent facts. If no search is needed, reply exactly with 'NO_SEARCH'. Message: {latest_msg}"}],
+                        temperature=0.0
+                    )
+                    search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
+                except Exception:
+                    pass
 
                 context_data = ""
-
-                # STEP 2: Scrape the Live Internet based on the AI's query
-                if search_term and search_term != "NO_SEARCH" and not "NO_SEARCH" in search_term:
-                    
-                    # TACTIC A: Deep Wikipedia Scraping (Best for Squads, People, History)
-                    if bool(re.search(r'\b(squad|roster|team|club|who is|biography|history of)\b', latest_msg_lower)):
-                        wiki_data = search_wikipedia_direct(search_term)
-                        if wiki_data:
-                            context_data += f"--- WIKIPEDIA DEEP SCRAPE KNOWLEDGE BASE ---\n{wiki_data}\n\n"
-
-                    # TACTIC B: Live News & General Web Search (Best for current events)
+                
+                # Safely Search the Web
+                if search_term and search_term != "NO_SEARCH" and "NO_SEARCH" not in search_term:
                     try:
-                        # 1. Fetch live news articles from the last 24 hours
-                        if bool(re.search(r'\b(news|latest|today|update|match|score)\b', latest_msg_lower)):
-                            news_results = DDGS().news(search_term, max_results=3)
-                            if news_results:
-                                news_snippets = "\n".join([f"NEWS ({r.get('date')}): {r.get('title')} - {r.get('body')}" for r in news_results])
-                                context_data += f"--- LIVE BREAKING NEWS ---\n{news_snippets}\n\n"
-
-                        # 2. Fetch general web search results
-                        ddg_results = DDGS().text(search_term, max_results=6)
+                        ddg_results = DDGS().text(search_term, max_results=4)
                         if ddg_results:
-                            # Intelligent "Clicking": Automatically open the first highly reliable link
                             for r in ddg_results:
                                 href = r.get('href', '')
-                                if any(domain in href.lower() for domain in ['goal.com', 'espn', 'transfermarkt', 'skysports', 'bbc', 'cnn', 'nytimes', 'realmadrid', 'forbes']):
+                                if any(domain in href.lower() for domain in ['goal.com', 'espn', 'wikipedia', 'bbc']):
                                     page_text = fetch_webpage_content(href)
-                                    if len(page_text) > 500:
-                                        context_data += f"--- DEEP WEB SCRAPE FROM {href} ---\n{page_text}\n\n"
-                                        break # Stop after reading one massive article
-                                        
-                            # Backup: Feed the Google snippets directly to the AI's brain
-                            snippets = "\n".join([f"Source: {r.get('title')} ({r.get('href')}): {r.get('body')}" for r in ddg_results])
-                            context_data += f"--- GOOGLE SEARCH SNIPPETS ---\n{snippets}\n\n"
+                                    if len(page_text) > 300:
+                                        context_data += f"--- SCRAPED FROM {href} ---\n{page_text}\n\n"
+                                        break
+                            
+                            snippets = "\n".join([f"Source: {r.get('title')}: {r.get('body')}" for r in ddg_results])
+                            context_data += f"--- SEARCH SNIPPETS ---\n{snippets}\n\n"
                     except Exception:
-                        pass
+                        pass # Ignore search errors so the AI can still reply
 
-                # STEP 3: The Final Synthesis (Generating the perfect answer)
+                # Stream the Final Answer
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
-                    "You are a top-tier, world-class AI Assistant with direct access to live internet data.\n\n"
-                    "CRITICAL DIRECTIVES:\n"
-                    "1. YOU MUST USE THE 'LIVE INTERNET SEARCH DATA' PROVIDED BELOW to answer the user accurately.\n"
-                    "2. NEVER apologize for lacking real-time info. NEVER mention a 'knowledge cutoff'. You live in the present.\n"
-                    "3. If the scraped data is slightly messy, act like an expert: parse it intelligently, extract the facts, and provide the perfect answer.\n"
-                    "4. If the user asks for a sports squad, ALWAYS group players neatly by position with emojis (🥅 Goalkeepers, 🛡️ Defenders, ⚽ Midfielders, 🔥 Forwards) and include jersey numbers.\n"
-                    "5. Be confident, highly structured, and directly answer the user's prompt without unnecessary filler.\n"
-                    f"\nLIVE INTERNET SEARCH DATA FOR YOU TO READ:\n{context_data if context_data else 'No external data fetched. Rely on internal knowledge.'}"
+                    "You are Opus AI, a brilliant, highly reliable, and intelligent AI assistant.\n"
+                    "If internet data is provided below, use it to accurately answer the user's question. Format your answers clearly.\n"
+                    f"\n--- INTERNET DATA ---\n{context_data if context_data else 'No internet data available. Rely on internal knowledge.'}"
                 )
 
                 stream = client.chat.completions.create(
                     model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        *history
-                    ],
-                    temperature=0.3,
+                    messages=[{"role": "system", "content": system_prompt}] + history,
+                    temperature=0.4,
                     stream=True
                 )
 
@@ -328,6 +186,7 @@ def smart_chat(req: ChatRequest):
                         yield chunk.choices[0].delta.content
 
             except Exception as e:
-                yield f"⚠️ Network Engine Error: {str(e)}"
+                # Clean error message instead of crashing
+                yield "I apologize, but I am experiencing a temporary network issue. Please try your request again in a moment."
 
         return StreamingResponse(generate_universal_chat(), media_type="text/event-stream")
