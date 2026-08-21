@@ -33,6 +33,22 @@ def clean_scraped_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
+# --- NEW: UNBLOCKABLE WIKIPEDIA FAILSAFE ---
+def fetch_wikipedia_data(query: str) -> str:
+    try:
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(query)}&utf8=&format=json"
+        search_data = requests.get(search_url, timeout=5).json()
+        if search_data.get('query', {}).get('search'):
+            title = search_data['query']['search'][0]['title']
+            page_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&titles={urllib.parse.quote(title)}&format=json"
+            page_data = requests.get(page_url, timeout=5).json()
+            pages = page_data.get('query', {}).get('pages', {})
+            for page_id in pages:
+                return pages[page_id].get('extract', '')[:4000]
+    except Exception:
+        pass
+    return ""
+
 def fetch_webpage_content(url: str) -> str:
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -81,19 +97,17 @@ def smart_chat(req: ChatRequest):
     if not client:
         return StreamingResponse(iter(["⚠️ Error: GROQ_API_KEY is missing from your server environment."]), media_type="text/event-stream")
 
-    # --- THE STRICT WHITELIST MODEL SELECTOR ---
     GUARANTEED_MODELS = [
         "llama-3.3-70b-versatile",
         "openai/gpt-oss-20b",
         "llama-3.1-8b-instant"
     ]
-    MODEL_NAME = "llama-3.3-70b-versatile" # Safest default
+    MODEL_NAME = "llama-3.3-70b-versatile" 
     
     try:
         active_models_data = client.models.list().data
         live_model_ids = [m.id for m in active_models_data]
         
-        # Only select a model if it is in our guaranteed safe list
         for g_model in GUARANTEED_MODELS:
             if g_model in live_model_ids:
                 MODEL_NAME = g_model
@@ -132,11 +146,12 @@ def smart_chat(req: ChatRequest):
                 except Exception:
                     pass
 
-                # --- RATE LIMIT AWARENESS ---
                 context_data = ""
                 search_status_note = "No internet data available. Rely on internal knowledge."
                 
                 if search_term and search_term != "NO_SEARCH" and "NO_SEARCH" not in search_term:
+                    
+                    # 1. Try DuckDuckGo First
                     try:
                         ddg_results = DDGS().text(search_term, max_results=4)
                         if ddg_results:
@@ -147,15 +162,20 @@ def smart_chat(req: ChatRequest):
                                     if len(page_text) > 300:
                                         context_data += f"--- SCRAPED FROM {href} ---\n{page_text}\n\n"
                                         break
-                            
                             snippets = "\n".join([f"Source: {r.get('title')}: {r.get('body')}" for r in ddg_results])
                             context_data += f"--- SEARCH SNIPPETS ---\n{snippets}\n\n"
-                            search_status_note = context_data
-                        else:
-                            search_status_note = "SYSTEM INSTRUCTION: The web search returned zero results. Inform the user you couldn't find recent info on this."
                     except Exception:
-                        # If DuckDuckGo blocks us for searching too much
-                        search_status_note = "SYSTEM INSTRUCTION: Your internet search engine is temporarily blocked due to rate limits. Apologize to the user and tell them your live web search is temporarily offline, so you cannot fetch real-time 2026 data right now."
+                        pass # Silently fail if DDG blocks Render
+
+                    # 2. Trigger Wikipedia Failsafe
+                    wiki_data = fetch_wikipedia_data(search_term)
+                    if wiki_data:
+                        context_data += f"--- WIKIPEDIA BACKUP DATA ---\n{wiki_data}\n\n"
+                    
+                    if context_data.strip():
+                        search_status_note = context_data
+                    else:
+                        search_status_note = "SYSTEM INSTRUCTION: Live search is currently blocked. Provide the best possible answer from your internal training data."
 
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
