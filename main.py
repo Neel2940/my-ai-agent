@@ -13,7 +13,6 @@ from duckduckgo_search import DDGS
 
 app = FastAPI()
 
-# --- 1. SERVER CONFIGURATION ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +28,6 @@ class MessageItem(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
 
-# --- 2. CRASH-PROOF WEB SCRAPING ENGINE ---
 def clean_scraped_text(text: str) -> str:
     text = re.sub(r'\[\d+\]', '', text)
     text = re.sub(r'\s+', ' ', text)
@@ -56,14 +54,12 @@ def fetch_webpage_content(url: str) -> str:
         main_text = clean_scraped_text(soup.get_text(separator=' '))
         return f"{roster_data}\n\n{main_text}"[:8000]
     except Exception:
-        # If the website blocks us, fail silently so the app doesn't crash
         return ""
 
 def extract_clean_subject(text: str) -> str:
     clean = re.sub(r'(?i)\b(give|show|send|get|fetch|me|please|can|you|the|an|a|some|more|another|pictures?|images?|photos?|pics?|imgs?|of|for|about)\b', '', text)
     return re.sub(r'[^\w\s]', '', clean).strip() or text.strip()
 
-# --- 3. CORE CHAT ROUTE ---
 @app.get("/")
 def home():
     return {"status": "Opus AI API Online."}
@@ -85,35 +81,27 @@ def smart_chat(req: ChatRequest):
     if not client:
         return StreamingResponse(iter(["⚠️ Error: GROQ_API_KEY is missing from your server environment."]), media_type="text/event-stream")
 
-    # --- THE BULLETPROOF MODEL SELECTOR ---
-    MODEL_NAME = "llama-3.3-70b-versatile" # Default rock-solid model
+    # --- THE STRICT WHITELIST MODEL SELECTOR ---
+    GUARANTEED_MODELS = [
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-20b",
+        "llama-3.1-8b-instant"
+    ]
+    MODEL_NAME = "llama-3.3-70b-versatile" # Safest default
+    
     try:
         active_models_data = client.models.list().data
         live_model_ids = [m.id for m in active_models_data]
         
-        # Strip out non-conversational models to prevent crashes
-        valid_chat_models = [
-            m for m in live_model_ids 
-            if "whisper" not in m.lower() and "guard" not in m.lower() and "vision" not in m.lower() and "tts" not in m.lower()
-        ]
-        
-        if valid_chat_models:
-            # Target the absolute best production models available on Groq
-            if "llama-3.3-70b-versatile" in valid_chat_models:
-                MODEL_NAME = "llama-3.3-70b-versatile"
-            elif "openai/gpt-oss-20b" in valid_chat_models:
-                MODEL_NAME = "openai/gpt-oss-20b"
-            elif "llama-3.1-8b-instant" in valid_chat_models:
-                MODEL_NAME = "llama-3.1-8b-instant"
-            else:
-                llamas = [m for m in valid_chat_models if "llama" in m.lower()]
-                MODEL_NAME = llamas[0] if llamas else valid_chat_models[0]
+        # Only select a model if it is in our guaranteed safe list
+        for g_model in GUARANTEED_MODELS:
+            if g_model in live_model_ids:
+                MODEL_NAME = g_model
+                break
     except Exception:
         pass
 
-    # --- ROUTING LOGIC ---
-    
-    # 1. IMAGE REQUEST
+    # ROUTE 1: Image Requests
     if bool(re.search(r'\b(image|images|photo|photos|picture|pictures|pic|pics)\b', latest_msg_lower)) and not bool(re.search(r'\b(age|squad|team|stats|who|what|where)\b', latest_msg_lower)):
         clean_search = extract_clean_subject(latest_msg)
         img_list = []
@@ -122,7 +110,6 @@ def smart_chat(req: ChatRequest):
             for res in results:
                 if res.get('image'): img_list.append(res['image'])
         except Exception:
-            # Backup image generator if DuckDuckGo fails
             query_encoded = urllib.parse.quote_plus(clean_search)
             img_list = [f"https://tse1.mm.bing.net/th?q={query_encoded}&w=600&h=400&c=7&rs=1&p=0&dpr=1&pid=1.7&mkt=en-US&adlt=moderate&t={i}" for i in range(1, 4)]
             
@@ -130,11 +117,10 @@ def smart_chat(req: ChatRequest):
         def generate_images(): yield f"Here are pictures of {clean_search.title()}:\n\n{combined}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # 2. UNIVERSAL CHAT & REAL-TIME SEARCH
+    # ROUTE 2: Chat & Comprehensive Fact Search
     else:
         def generate_universal_chat():
             try:
-                # Ask the AI what to search
                 search_term = "NO_SEARCH"
                 try:
                     opt_res = client.chat.completions.create(
@@ -146,9 +132,10 @@ def smart_chat(req: ChatRequest):
                 except Exception:
                     pass
 
+                # --- RATE LIMIT AWARENESS ---
                 context_data = ""
+                search_status_note = "No internet data available. Rely on internal knowledge."
                 
-                # Safely Search the Web
                 if search_term and search_term != "NO_SEARCH" and "NO_SEARCH" not in search_term:
                     try:
                         ddg_results = DDGS().text(search_term, max_results=4)
@@ -163,15 +150,18 @@ def smart_chat(req: ChatRequest):
                             
                             snippets = "\n".join([f"Source: {r.get('title')}: {r.get('body')}" for r in ddg_results])
                             context_data += f"--- SEARCH SNIPPETS ---\n{snippets}\n\n"
+                            search_status_note = context_data
+                        else:
+                            search_status_note = "SYSTEM INSTRUCTION: The web search returned zero results. Inform the user you couldn't find recent info on this."
                     except Exception:
-                        pass # Ignore search errors so the AI can still reply
+                        # If DuckDuckGo blocks us for searching too much
+                        search_status_note = "SYSTEM INSTRUCTION: Your internet search engine is temporarily blocked due to rate limits. Apologize to the user and tell them your live web search is temporarily offline, so you cannot fetch real-time 2026 data right now."
 
-                # Stream the Final Answer
                 system_prompt = (
                     f"Current Date: {current_date}.\n"
                     "You are Opus AI, a brilliant, highly reliable, and intelligent AI assistant.\n"
-                    "If internet data is provided below, use it to accurately answer the user's question. Format your answers clearly.\n"
-                    f"\n--- INTERNET DATA ---\n{context_data if context_data else 'No internet data available. Rely on internal knowledge.'}"
+                    "If internet data or system instructions are provided below, follow them carefully.\n"
+                    f"\n--- INTERNET DATA & INSTRUCTIONS ---\n{search_status_note}"
                 )
 
                 stream = client.chat.completions.create(
@@ -186,7 +176,6 @@ def smart_chat(req: ChatRequest):
                         yield chunk.choices[0].delta.content
 
             except Exception as e:
-                # Clean error message instead of crashing
                 yield "I apologize, but I am experiencing a temporary network issue. Please try your request again in a moment."
 
         return StreamingResponse(generate_universal_chat(), media_type="text/event-stream")
