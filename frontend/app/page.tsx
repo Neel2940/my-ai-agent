@@ -16,11 +16,7 @@ interface ChatSession {
 }
 
 const AILogo = ({ size = 24 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="35" cy="45" r="8" />
-    <circle cx="75" cy="25" r="8" />
-    <path d="M 55 55 L 25 75 C 10 85, 5 65, 5 45 C 5 15, 20 5, 40 5 C 60 5, 60 25, 60 45 L 60 70 C 60 90, 85 90, 85 70 L 85 50" />
-  </svg>
+  <img src="/icon-512.png" alt="Opus AI Logo" width={size} height={size} className="object-contain" />
 );
 
 export default function Home() {
