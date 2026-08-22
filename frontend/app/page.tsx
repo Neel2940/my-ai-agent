@@ -16,7 +16,7 @@ interface ChatSession {
 }
 
 const AILogo = ({ size = 24 }: { size?: number }) => (
-  <img src="/icon-512.png" alt="Opus AI Logo" width={size} height={size} className="object-contain" />
+  <img src="/opus-logo.png" alt="Opus AI Logo" width={size} height={size} className="object-contain" />
 );
 
 export default function Home() {
