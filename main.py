@@ -198,4 +198,4 @@ def smart_chat(req: ChatRequest):
             except Exception as e:
                 yield "I apologize, but I am experiencing a temporary network issue. Please try your request again in a moment."
 
-        return StreamingResponse(generate_universal_chat(), media_type="text/event-stream")
+        return StreamingResponse(generate_universal_chat(), media_type="text/event-stream") 
