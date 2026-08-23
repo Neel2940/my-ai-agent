@@ -51,13 +51,13 @@ export default function Home() {
     setIsLoaded(true);
   }, []);
 
-  // 2. Save chats to phone storage immediately whenever they change
+  // 2. Save chats to phone storage ONLY when the AI finishes typing
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && !loading) {
       localStorage.setItem("opus_sessions", JSON.stringify(sessions));
       localStorage.setItem("opus_current_session", currentSessionId);
     }
-  }, [sessions, currentSessionId, isLoaded]);
+  }, [sessions, currentSessionId, isLoaded, loading]);
   // -------------------------
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
