@@ -131,7 +131,11 @@ export default function Home() {
       
       const res = await fetch('https://my-ai-agent-8ckl.onrender.com/smart_chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream', // Tells the server to stream instantly
+          'Cache-Control': 'no-cache'    // Tells the browser not to hold the data
+        },
         body: JSON.stringify({ messages: formattedHistory }),
       });
       if (!res.ok) throw new Error(`Server Error`);
