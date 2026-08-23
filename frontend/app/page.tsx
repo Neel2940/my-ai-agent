@@ -16,9 +16,12 @@ interface ChatSession {
 }
 
 const AILogo = ({ size = 24 }: { size?: number }) => (
-  <img src="/opus-logo.png" alt="Opus AI Logo" width={size} height={size} className="object-contain" />
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="35" cy="45" r="8" />
+    <circle cx="75" cy="25" r="8" />
+    <path d="M 55 55 L 25 75 C 10 85, 5 65, 5 45 C 5 15, 20 5, 40 5 C 60 5, 75 15, 75 45 L 75 75 C 75 95, 60 95, 50 85 Z" />
+  </svg>
 );
-
 export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
