@@ -23,6 +23,7 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   const [attachedFile, setAttachedFile] = useState<string | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -539,16 +540,56 @@ export default function Home() {
               )}
               
               <div className="composer">
-                <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+                {/* Hiding the actual file input - Now accepts videos too! */}
+        <input type="file" accept="image/*,video/*" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+        
+        <div className="composer-icons" style={{ position: 'relative' }}>
+          
+          {/* --- THE NEW PREMIUM POPUP MENU --- */}
+          {showMenu && (
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '0',
+              marginBottom: '16px',
+              background: '#FFFFFF',
+              borderRadius: '24px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+              padding: '24px',
+              display: 'flex',
+              gap: '24px',
+              zIndex: 100
+            }}>
+              {/* Photos Gallery Button */}
+              <button onClick={() => { 
+                fileInputRef.current?.removeAttribute('capture'); 
+                fileInputRef.current?.click(); 
+                setShowMenu(false); 
+              }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <div style={{ width: '60px', height: '60px', background: '#F0F4F8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>🖼️</div>
+                <span style={{ fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Photos</span>
+              </button>
+              
+              {/* Live Camera Button */}
+              <button onClick={() => { 
+                fileInputRef.current?.setAttribute('capture', 'environment'); 
+                fileInputRef.current?.click(); 
+                setShowMenu(false); 
+              }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <div style={{ width: '60px', height: '60px', background: '#F0F4F8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>📷</div>
+                <span style={{ fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Camera</span>
+              </button>
+            </div>
+          )}
+          
+          {/* The + Button */}
+          <button className="icon-btn" onClick={() => setShowMenu(!showMenu)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ width: '24px', height: '24px', strokeWidth: 2 }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        </div>
                 
-                <div className="composer-icons">
-                  <button className="icon-btn" onClick={() => alert("Plugins coming soon!")}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 20, height: 20 }}><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14"/></svg>
-                  </button>
-                  <button className="icon-btn" onClick={() => fileInputRef.current?.click()}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 18, height: 18 }}><path strokeLinecap="round" strokeLinejoin="round" d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg>
-                  </button>
-                </div>
                 
                 <input 
                   className="composer-input"
