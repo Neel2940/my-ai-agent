@@ -32,6 +32,34 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // --- NEW MEMORY SYSTEM ---
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // 1. Load chats from phone storage when the app opens
+  useEffect(() => {
+    const savedChats = localStorage.getItem("opus_sessions");
+    const savedCurrentId = localStorage.getItem("opus_current_session");
+    
+    if (savedChats) {
+      try {
+        setSessions(JSON.parse(savedChats));
+        if (savedCurrentId) setCurrentSessionId(savedCurrentId);
+      } catch (e) {
+        console.error("Failed to load memory");
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // 2. Save chats to phone storage immediately whenever they change
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem("opus_sessions", JSON.stringify(sessions));
+      localStorage.setItem("opus_current_session", currentSessionId);
+    }
+  }, [sessions, currentSessionId, isLoaded]);
+  // -------------------------
+
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
