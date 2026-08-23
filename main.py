@@ -1,3 +1,4 @@
+import time
 import os
 import re
 import urllib.parse
@@ -193,8 +194,8 @@ def smart_chat(req: ChatRequest):
 
                 for chunk in stream:
                     if chunk.choices[0].delta.content:
+                        time.sleep(0.02)  # Forces the AI to type at a readable human pace
                         yield chunk.choices[0].delta.content
-
             except Exception as e:
                 yield "I apologize, but I am experiencing a temporary network issue. Please try your request again in a moment."
 
