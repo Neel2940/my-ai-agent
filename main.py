@@ -107,7 +107,7 @@ def smart_chat(req: ChatRequest):
         def generate_vision_chat():
             try:
                 # FIXED: Upgraded to Groq's active 90b Vision Model!
-                VISION_MODEL = "llama-3.2-90b-vision-preview"
+                VISION_MODEL = "qwen/qwen3.6-27b"
                 
                 vision_history = []
                 for m in req.messages:
