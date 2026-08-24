@@ -18,11 +18,15 @@ interface ChatSession {
 const AILogo = ({ size = 24 }: { size?: number }) => (
   <img src="/icon-512.png" alt="Opus AI Logo" width={size} height={size} className="object-contain" />
 );
+
 export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
+  
   const [attachedFile, setAttachedFile] = useState<string | null>(null);
+  const [attachedBase64, setAttachedBase64] = useState<string | null>(null); // NEW: Holds the actual image data!
+  
   const [showMenu, setShowMenu] = useState(false);
   const [loading, setLoading] = useState(false);
   
@@ -36,10 +40,8 @@ export default function Home() {
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // --- NEW MEMORY SYSTEM ---
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. Load chats from phone storage when the app opens
   useEffect(() => {
     const savedChats = localStorage.getItem("opus_sessions");
     const savedCurrentId = localStorage.getItem("opus_current_session");
@@ -55,14 +57,12 @@ export default function Home() {
     setIsLoaded(true);
   }, []);
 
-  // 2. Save chats to phone storage ONLY when the AI finishes typing
   useEffect(() => {
     if (isLoaded && !loading) {
       localStorage.setItem("opus_sessions", JSON.stringify(sessions));
       localStorage.setItem("opus_current_session", currentSessionId);
     }
   }, [sessions, currentSessionId, isLoaded, loading]);
-  // -------------------------
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -135,20 +135,32 @@ export default function Home() {
     } else createNewChat();
   };
 
+  // NEW: Reads the actual image pixels and converts to Base64
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setAttachedFile(file.name);
+    if (file) {
+      setAttachedFile(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        setAttachedBase64(base64String);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const sendMessage = async () => {
     if ((!input.trim() && !attachedFile) || loading || !currentSessionId) return;
     setActiveView('chat');
     
-    let userText = input;
+    let userText = input || "What is in this image?";
     if (attachedFile) userText = `[Attached File: ${attachedFile}] ${userText}`;
+    
+    const currentBase64 = attachedBase64; // Save before clearing
     
     setInput('');
     setAttachedFile(null);
+    setAttachedBase64(null); // Clear image data
 
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
     let updatedTitle = currentSession?.title || 'New chat';
@@ -159,14 +171,23 @@ export default function Home() {
 
     try {
       setSessions((prev) => prev.map((s) => (s.id === currentSessionId ? { ...s, messages: [...updatedMessages, { sender: 'ai', text: '' }] } : s)));
-      const formattedHistory = updatedMessages.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
+      
+      // NEW: Send the Base64 image to the backend for the current message ONLY
+      const formattedHistory = updatedMessages.map((m, index) => {
+        const isLastMessage = index === updatedMessages.length - 1;
+        return { 
+          role: m.sender === 'user' ? 'user' : 'assistant', 
+          content: m.text,
+          ...(isLastMessage && currentBase64 ? { image: currentBase64 } : {})
+        };
+      });
       
       const res = await fetch('https://my-ai-agent-8ckl.onrender.com/smart_chat', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream', // Tells the server to stream instantly
-          'Cache-Control': 'no-cache'    // Tells the browser not to hold the data
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache'
         },
         body: JSON.stringify({ messages: formattedHistory }),
       });
@@ -356,7 +377,6 @@ export default function Home() {
           background: #FFFFFF; border: 1px solid #D1D1D1; box-shadow: 0 2px 6px rgba(0,0,0,0.02);
         }
 
-        /* NEW ICON LAYOUT */
         .composer-icons { display: flex; gap: 4px; flex-shrink: 0; align-items: center; padding-bottom: 2px; }
         .icon-btn {
           width: 32px; height: 32px; border-radius: var(--gesso-radius-full);
@@ -535,7 +555,8 @@ export default function Home() {
                   <div className="thumb">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{width: 14, height: 14}}><path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                     {attachedFile}
-                    <button className="remove" onClick={() => setAttachedFile(null)}>
+                    {/* NEW: Make sure we delete the Base64 data if the user removes the file! */}
+                    <button className="remove" onClick={() => { setAttachedFile(null); setAttachedBase64(null); }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{width: 12, height: 12, strokeWidth: 2.5}}><path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18M6 6l12 12"/></svg>
                     </button>
                   </div>
@@ -543,494 +564,488 @@ export default function Home() {
               )}
               
               <div className="composer">
-                {/* Hiding the actual file input - Now accepts videos too! */}
-        {/* Dedicated Hidden Inputs */}
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        ref={cameraInputRef}
-        onChange={handleFileUpload}
-        style={{ display: "none" }}
-      />
-      <input
-        type="file"
-        accept="image/*,video/*"
-        ref={photoInputRef}
-        onChange={handleFileUpload}
-        style={{ display: "none" }}
-      />
-      <input
-        type="file"
-        accept="*/*"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
-        style={{ display: "none" }}
-      />
+                {/* Dedicated Hidden Inputs */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={cameraInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: "none" }}
+                />
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  ref={photoInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: "none" }}
+                />
+                <input
+                  type="file"
+                  accept="*/*"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: "none" }}
+                />
 
-      {/* --- CLAUDE-STYLE "ADD TO CHAT" BOTTOM SHEET --- */}
-      {showMenu && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.4)",
-            zIndex: 999,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "flex-end",
-          }}
-          onClick={() => setShowMenu(false)}
-        >
-          <div
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderTopLeftRadius: "32px",
-              borderTopRightRadius: "32px",
-              padding: "16px 20px 36px 20px",
-              width: "100%",
-              maxWidth: "540px",
-              margin: "0 auto",
-              boxShadow: "0 -10px 40px rgba(0,0,0,0.15)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Pill Drag Handle */}
-            <div
-              style={{
-                width: "40px",
-                height: "4px",
-                backgroundColor: "#D1D5DB",
-                borderRadius: "9999px",
-                margin: "0 auto 12px auto",
-              }}
-            />
-
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: "20px",
-                position: "relative",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setShowMenu(false)}
-                style={{
-                  padding: "6px",
-                  borderRadius: "50%",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#1F2937",
-                }}
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-              <span
-                style={{
-                  fontSize: "17px",
-                  fontWeight: "600",
-                  color: "#111827",
-                  position: "absolute",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                }}
-              >
-                Add to chat
-              </span>
-              <div style={{ width: "28px" }} />
-            </div>
-
-            {/* 3 Top Action Cards (Camera, Photos, Files) */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: "12px",
-                marginBottom: "20px",
-              }}
-            >
-              {/* Camera Card */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  cameraInputRef.current?.click();
-                }}
-                style={{
-                  backgroundColor: "#F9FAFB",
-                  border: "1px solid #F3F4F6",
-                  borderRadius: "20px",
-                  padding: "16px 8px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "10px",
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    backgroundColor: "#E5E7EB",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#1F2937",
-                  }}
-                >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                    <circle cx="12" cy="13" r="4"></circle>
-                  </svg>
-                </div>
-                <span
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    color: "#111827",
-                  }}
-                >
-                  Camera
-                </span>
-              </button>
-
-              {/* Photos Card */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  photoInputRef.current?.click();
-                }}
-                style={{
-                  backgroundColor: "#F9FAFB",
-                  border: "1px solid #F3F4F6",
-                  borderRadius: "20px",
-                  padding: "16px 8px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "10px",
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    backgroundColor: "#E5E7EB",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#1F2937",
-                  }}
-                >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <rect
-                      x="3"
-                      y="3"
-                      width="18"
-                      height="18"
-                      rx="3"
-                      ry="3"
-                    ></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21 15 16 10 5 21"></polyline>
-                  </svg>
-                </div>
-                <span
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    color: "#111827",
-                  }}
-                >
-                  Photos
-                </span>
-              </button>
-
-              {/* Files Card */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  fileInputRef.current?.click();
-                }}
-                style={{
-                  backgroundColor: "#F9FAFB",
-                  border: "1px solid #F3F4F6",
-                  borderRadius: "20px",
-                  padding: "16px 8px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "10px",
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    backgroundColor: "#E5E7EB",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#1F2937",
-                  }}
-                >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="12" y1="18" x2="12" y2="12"></line>
-                    <line x1="9" y1="15" x2="12" y2="12"></line>
-                    <line x1="15" y1="15" x2="12" y2="12"></line>
-                  </svg>
-                </div>
-                <span
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    color: "#111827",
-                  }}
-                >
-                  Files
-                </span>
-              </button>
-            </div>
-
-            {/* List Items */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
-            >
-              {/* Web Search Row */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "12px 14px",
-                  borderRadius: "16px",
-                  backgroundColor: "#F9FAFB",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                  }}
-                >
+                {/* --- CLAUDE-STYLE "ADD TO CHAT" BOTTOM SHEET --- */}
+                {showMenu && (
                   <div
                     style={{
-                      width: "36px",
-                      height: "36px",
-                      borderRadius: "50%",
-                      backgroundColor: "#E5E7EB",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#1F2937",
-                    }}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="2" y1="12" x2="22" y2="12"></line>
-                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                    </svg>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: "15px",
-                      fontWeight: "500",
-                      color: "#111827",
-                    }}
-                  >
-                    Web search
-                  </span>
-                </div>
-                {/* Toggle Switch */}
-                <div
-                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                  style={{
-                    width: "48px",
-                    height: "28px",
-                    backgroundColor: webSearchEnabled ? "#2563EB" : "#D1D5DB",
-                    borderRadius: "9999px",
-                    padding: "2px",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s",
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "24px",
-                      height: "24px",
-                      backgroundColor: "#FFFFFF",
-                      borderRadius: "50%",
-                      transform: webSearchEnabled
-                        ? "translateX(20px)"
-                        : "translateX(0px)",
-                      transition: "transform 0.2s",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Add to Project Row */}
-              <div
-                onClick={() => alert("Projects feature coming soon!")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "12px 14px",
-                  borderRadius: "16px",
-                  backgroundColor: "#F9FAFB",
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "36px",
-                      height: "36px",
-                      borderRadius: "50%",
-                      backgroundColor: "#E5E7EB",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#1F2937",
-                    }}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                  </div>
-                  <div
-                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      backgroundColor: "rgba(0, 0, 0, 0.4)",
+                      zIndex: 999,
                       display: "flex",
                       flexDirection: "column",
-                      textAlign: "left",
+                      justifyContent: "flex-end",
                     }}
+                    onClick={() => setShowMenu(false)}
                   >
-                    <span
+                    <div
                       style={{
-                        fontSize: "15px",
-                        fontWeight: "500",
-                        color: "#111827",
+                        backgroundColor: "#FFFFFF",
+                        borderTopLeftRadius: "32px",
+                        borderTopRightRadius: "32px",
+                        padding: "16px 20px 36px 20px",
+                        width: "100%",
+                        maxWidth: "540px",
+                        margin: "0 auto",
+                        boxShadow: "0 -10px 40px rgba(0,0,0,0.15)",
                       }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      Add to project
-                    </span>
-                    <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                      None
-                    </span>
-                  </div>
-                </div>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#9CA3AF"
-                  strokeWidth="2"
-                >
-                  <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                      {/* Pill Drag Handle */}
+                      <div
+                        style={{
+                          width: "40px",
+                          height: "4px",
+                          backgroundColor: "#D1D5DB",
+                          borderRadius: "9999px",
+                          margin: "0 auto 12px auto",
+                        }}
+                      />
 
-      {/* The '+' Plus Button */}
-      <button
-        type="button"
-        className="icon-btn"
-        onClick={() => setShowMenu(true)}
-        style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px" }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          style={{ width: "22px", height: "22px", strokeWidth: 2 }}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 5v14M5 12h14"
-          />
-        </svg>
-      </button>    
+                      {/* Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "20px",
+                          position: "relative",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setShowMenu(false)}
+                          style={{
+                            padding: "6px",
+                            borderRadius: "50%",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#1F2937",
+                            background: "transparent",
+                            border: "none"
+                          }}
+                        >
+                          <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                          </svg>
+                        </button>
+                        <span
+                          style={{
+                            fontSize: "17px",
+                            fontWeight: "600",
+                            color: "#111827",
+                            position: "absolute",
+                            left: "50%",
+                            transform: "translateX(-50%)",
+                          }}
+                        >
+                          Add to chat
+                        </span>
+                        <div style={{ width: "28px" }} />
+                      </div>
+
+                      {/* 3 Top Action Cards (Camera, Photos, Files) */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 1fr",
+                          gap: "12px",
+                          marginBottom: "20px",
+                        }}
+                      >
+                        {/* Camera Card */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMenu(false);
+                            cameraInputRef.current?.click();
+                          }}
+                          style={{
+                            backgroundColor: "#F9FAFB",
+                            border: "1px solid #F3F4F6",
+                            borderRadius: "20px",
+                            padding: "16px 8px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "10px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "48px",
+                              height: "48px",
+                              borderRadius: "50%",
+                              backgroundColor: "#E5E7EB",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#1F2937",
+                            }}
+                          >
+                            <svg
+                              width="22"
+                              height="22"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                            >
+                              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                              <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              color: "#111827",
+                            }}
+                          >
+                            Camera
+                          </span>
+                        </button>
+
+                        {/* Photos Card */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMenu(false);
+                            photoInputRef.current?.click();
+                          }}
+                          style={{
+                            backgroundColor: "#F9FAFB",
+                            border: "1px solid #F3F4F6",
+                            borderRadius: "20px",
+                            padding: "16px 8px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "10px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "48px",
+                              height: "48px",
+                              borderRadius: "50%",
+                              backgroundColor: "#E5E7EB",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#1F2937",
+                            }}
+                          >
+                            <svg
+                              width="22"
+                              height="22"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                            >
+                              <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
+                              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                              <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              color: "#111827",
+                            }}
+                          >
+                            Photos
+                          </span>
+                        </button>
+
+                        {/* Files Card */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMenu(false);
+                            fileInputRef.current?.click();
+                          }}
+                          style={{
+                            backgroundColor: "#F9FAFB",
+                            border: "1px solid #F3F4F6",
+                            borderRadius: "20px",
+                            padding: "16px 8px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "10px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "48px",
+                              height: "48px",
+                              borderRadius: "50%",
+                              backgroundColor: "#E5E7EB",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#1F2937",
+                            }}
+                          >
+                            <svg
+                              width="22"
+                              height="22"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                            >
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                              <polyline points="14 2 14 8 20 8"></polyline>
+                              <line x1="12" y1="18" x2="12" y2="12"></line>
+                              <line x1="9" y1="15" x2="12" y2="12"></line>
+                              <line x1="15" y1="15" x2="12" y2="12"></line>
+                            </svg>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              color: "#111827",
+                            }}
+                          >
+                            Files
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* List Items */}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}
+                      >
+                        {/* Web Search Row */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "12px 14px",
+                            borderRadius: "16px",
+                            backgroundColor: "#F9FAFB",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "14px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                                borderRadius: "50%",
+                                backgroundColor: "#E5E7EB",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#1F2937",
+                              }}
+                            >
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                              </svg>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: "15px",
+                                fontWeight: "500",
+                                color: "#111827",
+                              }}
+                            >
+                              Web search
+                            </span>
+                          </div>
+                          {/* Toggle Switch */}
+                          <div
+                            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                            style={{
+                              width: "48px",
+                              height: "28px",
+                              backgroundColor: webSearchEnabled ? "#2563EB" : "#D1D5DB",
+                              borderRadius: "9999px",
+                              padding: "2px",
+                              cursor: "pointer",
+                              transition: "background-color 0.2s",
+                              display: "flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "24px",
+                                height: "24px",
+                                backgroundColor: "#FFFFFF",
+                                borderRadius: "50%",
+                                transform: webSearchEnabled
+                                  ? "translateX(20px)"
+                                  : "translateX(0px)",
+                                transition: "transform 0.2s",
+                                boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Add to Project Row */}
+                        <div
+                          onClick={() => alert("Projects feature coming soon!")}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "12px 14px",
+                            borderRadius: "16px",
+                            backgroundColor: "#F9FAFB",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "14px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                                borderRadius: "50%",
+                                backgroundColor: "#E5E7EB",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#1F2937",
+                              }}
+                            >
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                              </svg>
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                textAlign: "left",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "15px",
+                                  fontWeight: "500",
+                                  color: "#111827",
+                                }}
+                              >
+                                Add to project
+                              </span>
+                              <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                                None
+                              </span>
+                            </div>
+                          </div>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#9CA3AF"
+                            strokeWidth="2"
+                          >
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* The '+' Plus Button */}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setShowMenu(true)}
+                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px" }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    style={{ width: "22px", height: "22px", strokeWidth: 2 }}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 5v14M5 12h14"
+                    />
+                  </svg>
+                </button>    
                 
                 <input 
                   className="composer-input"
