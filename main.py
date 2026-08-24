@@ -25,6 +25,7 @@ app.add_middleware(
 class MessageItem(BaseModel):
     role: str
     content: str
+    image: str = None  # NEW: Now accepts Base64 image data from frontend!
 
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
@@ -34,7 +35,6 @@ def clean_scraped_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-# --- NEW: UNBLOCKABLE WIKIPEDIA FAILSAFE ---
 def fetch_wikipedia_data(query: str) -> str:
     try:
         search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(query)}&utf8=&format=json"
@@ -79,16 +79,18 @@ def extract_clean_subject(text: str) -> str:
 
 @app.get("/")
 def home():
-    return {"status": "Opus AI API Online."}
+    return {"status": "Opus AI API Online - Vision Enabled."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
     if not req.messages:
         return {"response": "No message history provided."}
 
-    history = [{"role": m.role, "content": m.content} for m in req.messages]
-    latest_msg = history[-1]["content"].strip()
+    # Grab the latest message data
+    latest_msg_obj = req.messages[-1]
+    latest_msg = latest_msg_obj.content.strip()
     latest_msg_lower = latest_msg.lower()
+    has_image = bool(latest_msg_obj.image)
     
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
@@ -98,6 +100,47 @@ def smart_chat(req: ChatRequest):
     if not client:
         return StreamingResponse(iter(["⚠️ Error: GROQ_API_KEY is missing from your server environment."]), media_type="text/event-stream")
 
+    # --- ROUTE 0: VISION AI (If user uploaded a photo) ---
+    if has_image:
+        def generate_vision_chat():
+            try:
+                # Use Groq's dedicated Vision Model
+                VISION_MODEL = "llama-3.2-11b-vision-preview"
+                
+                # We have to reformat the history so the Vision Model can read the image code
+                vision_history = []
+                for m in req.messages:
+                    if m.image:
+                        vision_history.append({
+                            "role": m.role,
+                            "content": [
+                                {"type": "text", "text": m.content},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{m.image}"}}
+                            ]
+                        })
+                    else:
+                        vision_history.append({"role": m.role, "content": m.content})
+                
+                stream = client.chat.completions.create(
+                    model=VISION_MODEL,
+                    messages=[{"role": "system", "content": "You are Opus AI, a brilliant vision assistant. Analyze the image carefully and answer the user's request accurately."}] + vision_history,
+                    temperature=0.3,
+                    stream=True
+                )
+                
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            except Exception as e:
+                yield f"I apologize, but I had trouble analyzing that image. (Error: {str(e)})"
+                
+        return StreamingResponse(
+            generate_vision_chat(),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"}
+        )
+
+    # --- ROUTE 1 & 2: TEXT & SEARCH AI (If no photo was uploaded) ---
     GUARANTEED_MODELS = [
         "llama-3.3-70b-versatile",
         "openai/gpt-oss-20b",
@@ -116,7 +159,9 @@ def smart_chat(req: ChatRequest):
     except Exception:
         pass
 
-    # ROUTE 1: Image Requests
+    history = [{"role": m.role, "content": m.content} for m in req.messages]
+
+    # Image Search Route
     if bool(re.search(r'\b(image|images|photo|photos|picture|pictures|pic|pics)\b', latest_msg_lower)) and not bool(re.search(r'\b(age|squad|team|stats|who|what|where)\b', latest_msg_lower)):
         clean_search = extract_clean_subject(latest_msg)
         img_list = []
@@ -132,7 +177,7 @@ def smart_chat(req: ChatRequest):
         def generate_images(): yield f"Here are pictures of {clean_search.title()}:\n\n{combined}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # ROUTE 2: Chat & Comprehensive Fact Search
+    # Text & Fact Search Route
     else:
         def generate_universal_chat():
             try:
@@ -151,8 +196,6 @@ def smart_chat(req: ChatRequest):
                 search_status_note = "No internet data available. Rely on internal knowledge."
                 
                 if search_term and search_term != "NO_SEARCH" and "NO_SEARCH" not in search_term:
-                    
-                    # 1. Try DuckDuckGo First
                     try:
                         ddg_results = DDGS().text(search_term, max_results=4)
                         if ddg_results:
@@ -166,9 +209,8 @@ def smart_chat(req: ChatRequest):
                             snippets = "\n".join([f"Source: {r.get('title')}: {r.get('body')}" for r in ddg_results])
                             context_data += f"--- SEARCH SNIPPETS ---\n{snippets}\n\n"
                     except Exception:
-                        pass # Silently fail if DDG blocks Render
+                        pass 
 
-                    # 2. Trigger Wikipedia Failsafe
                     wiki_data = fetch_wikipedia_data(search_term)
                     if wiki_data:
                         context_data += f"--- WIKIPEDIA BACKUP DATA ---\n{wiki_data}\n\n"
