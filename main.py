@@ -93,7 +93,7 @@ def smart_chat(req: ChatRequest):
     
     # Check if the user sent any images
     has_images = len(latest_msg_obj.images) > 0
-    
+     
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
     api_key = os.environ.get("GROQ_API_KEY")
@@ -124,6 +124,7 @@ def smart_chat(req: ChatRequest):
                     model=VISION_MODEL,
                     messages=[{"role": "system", "content": "You are Opus AI. Analyze the uploaded image(s) carefully and assist the user."}] + vision_history,
                     temperature=0.3,
+                    reasoning_format="hidden",
                     stream=True
                 )
                 
