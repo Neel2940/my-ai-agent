@@ -31,6 +31,9 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- NEW MEMORY SYSTEM ---
@@ -541,55 +544,493 @@ export default function Home() {
               
               <div className="composer">
                 {/* Hiding the actual file input - Now accepts videos too! */}
-        <input type="file" accept="image/*,video/*" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
-        
-        <div className="composer-icons" style={{ position: 'relative' }}>
-          
-          {/* --- THE NEW PREMIUM POPUP MENU --- */}
-          {showMenu && (
-            <div style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: '0',
-              marginBottom: '16px',
-              background: '#FFFFFF',
-              borderRadius: '24px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-              padding: '24px',
-              display: 'flex',
-              gap: '24px',
-              zIndex: 100
-            }}>
-              {/* Photos Gallery Button */}
-              <button onClick={() => { 
-                fileInputRef.current?.removeAttribute('capture'); 
-                fileInputRef.current?.click(); 
-                setShowMenu(false); 
-              }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <div style={{ width: '60px', height: '60px', background: '#F0F4F8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>🖼️</div>
-                <span style={{ fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Photos</span>
+        {/* Dedicated Hidden Inputs */}
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        ref={cameraInputRef}
+        onChange={handleFileUpload}
+        style={{ display: "none" }}
+      />
+      <input
+        type="file"
+        accept="image/*,video/*"
+        ref={photoInputRef}
+        onChange={handleFileUpload}
+        style={{ display: "none" }}
+      />
+      <input
+        type="file"
+        accept="*/*"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        style={{ display: "none" }}
+      />
+
+      {/* --- CLAUDE-STYLE "ADD TO CHAT" BOTTOM SHEET --- */}
+      {showMenu && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.4)",
+            zIndex: 999,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-end",
+          }}
+          onClick={() => setShowMenu(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderTopLeftRadius: "32px",
+              borderTopRightRadius: "32px",
+              padding: "16px 20px 36px 20px",
+              width: "100%",
+              maxWidth: "540px",
+              margin: "0 auto",
+              boxShadow: "0 -10px 40px rgba(0,0,0,0.15)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Pill Drag Handle */}
+            <div
+              style={{
+                width: "40px",
+                height: "4px",
+                backgroundColor: "#D1D5DB",
+                borderRadius: "9999px",
+                margin: "0 auto 12px auto",
+              }}
+            />
+
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "20px",
+                position: "relative",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowMenu(false)}
+                style={{
+                  padding: "6px",
+                  borderRadius: "50%",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#1F2937",
+                }}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
               </button>
-              
-              {/* Live Camera Button */}
-              <button onClick={() => { 
-                fileInputRef.current?.setAttribute('capture', 'environment'); 
-                fileInputRef.current?.click(); 
-                setShowMenu(false); 
-              }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <div style={{ width: '60px', height: '60px', background: '#F0F4F8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>📷</div>
-                <span style={{ fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Camera</span>
+              <span
+                style={{
+                  fontSize: "17px",
+                  fontWeight: "600",
+                  color: "#111827",
+                  position: "absolute",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                }}
+              >
+                Add to chat
+              </span>
+              <div style={{ width: "28px" }} />
+            </div>
+
+            {/* 3 Top Action Cards (Camera, Photos, Files) */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              {/* Camera Card */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  cameraInputRef.current?.click();
+                }}
+                style={{
+                  backgroundColor: "#F9FAFB",
+                  border: "1px solid #F3F4F6",
+                  borderRadius: "20px",
+                  padding: "16px 8px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    backgroundColor: "#E5E7EB",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#1F2937",
+                  }}
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                  </svg>
+                </div>
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    color: "#111827",
+                  }}
+                >
+                  Camera
+                </span>
+              </button>
+
+              {/* Photos Card */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  photoInputRef.current?.click();
+                }}
+                style={{
+                  backgroundColor: "#F9FAFB",
+                  border: "1px solid #F3F4F6",
+                  borderRadius: "20px",
+                  padding: "16px 8px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    backgroundColor: "#E5E7EB",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#1F2937",
+                  }}
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <rect
+                      x="3"
+                      y="3"
+                      width="18"
+                      height="18"
+                      rx="3"
+                      ry="3"
+                    ></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    color: "#111827",
+                  }}
+                >
+                  Photos
+                </span>
+              </button>
+
+              {/* Files Card */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  fileInputRef.current?.click();
+                }}
+                style={{
+                  backgroundColor: "#F9FAFB",
+                  border: "1px solid #F3F4F6",
+                  borderRadius: "20px",
+                  padding: "16px 8px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    backgroundColor: "#E5E7EB",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#1F2937",
+                  }}
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="12" y2="12"></line>
+                    <line x1="15" y1="15" x2="12" y2="12"></line>
+                  </svg>
+                </div>
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    color: "#111827",
+                  }}
+                >
+                  Files
+                </span>
               </button>
             </div>
-          )}
-          
-          {/* The + Button */}
-          <button className="icon-btn" onClick={() => setShowMenu(!showMenu)}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ width: '24px', height: '24px', strokeWidth: 2 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
+
+            {/* List Items */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              {/* Web Search Row */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 14px",
+                  borderRadius: "16px",
+                  backgroundColor: "#F9FAFB",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "50%",
+                      backgroundColor: "#E5E7EB",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#1F2937",
+                    }}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="2" y1="12" x2="22" y2="12"></line>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "15px",
+                      fontWeight: "500",
+                      color: "#111827",
+                    }}
+                  >
+                    Web search
+                  </span>
+                </div>
+                {/* Toggle Switch */}
+                <div
+                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                  style={{
+                    width: "48px",
+                    height: "28px",
+                    backgroundColor: webSearchEnabled ? "#2563EB" : "#D1D5DB",
+                    borderRadius: "9999px",
+                    padding: "2px",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "24px",
+                      height: "24px",
+                      backgroundColor: "#FFFFFF",
+                      borderRadius: "50%",
+                      transform: webSearchEnabled
+                        ? "translateX(20px)"
+                        : "translateX(0px)",
+                      transition: "transform 0.2s",
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Add to Project Row */}
+              <div
+                onClick={() => alert("Projects feature coming soon!")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 14px",
+                  borderRadius: "16px",
+                  backgroundColor: "#F9FAFB",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "50%",
+                      backgroundColor: "#E5E7EB",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#1F2937",
+                    }}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: "500",
+                        color: "#111827",
+                      }}
+                    >
+                      Add to project
+                    </span>
+                    <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                      None
+                    </span>
+                  </div>
+                </div>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#9CA3AF"
+                  strokeWidth="2"
+                >
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
-                
+      )}
+
+      {/* The '+' Plus Button */}
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={() => setShowMenu(true)}
+        style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px" }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          style={{ width: "22px", height: "22px", strokeWidth: 2 }}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 5v14M5 12h14"
+          />
+        </svg>
+      </button>    
                 
                 <input 
                   className="composer-input"
