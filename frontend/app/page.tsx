@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 interface Message {
   sender: 'user' | 'ai';
   text: string;
+  images?: string[]; // UPGRADED: Stores actual image arrays to show in chat!
 }
 
 interface ChatSession {
@@ -24,8 +25,8 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   
-  const [attachedFile, setAttachedFile] = useState<string | null>(null);
-  const [attachedBase64, setAttachedBase64] = useState<string | null>(null); // NEW: Holds the actual image data!
+  // UPGRADED: Now handles multiple image attachments
+  const [attachments, setAttachments] = useState<{name: string, base64: string}[]>([]); 
   
   const [showMenu, setShowMenu] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,14 +46,11 @@ export default function Home() {
   useEffect(() => {
     const savedChats = localStorage.getItem("opus_sessions");
     const savedCurrentId = localStorage.getItem("opus_current_session");
-    
     if (savedChats) {
       try {
         setSessions(JSON.parse(savedChats));
         if (savedCurrentId) setCurrentSessionId(savedCurrentId);
-      } catch (e) {
-        console.error("Failed to load memory");
-      }
+      } catch (e) {}
     }
     setIsLoaded(true);
   }, []);
@@ -69,31 +67,13 @@ export default function Home() {
 
   useEffect(() => {
     document.title = "Opus AI";
-    const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement || document.createElement('link');
-    link.type = 'image/svg+xml';
-    link.rel = 'icon';
-    link.href = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 100 100" fill="none" stroke="black" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><circle cx="35" cy="45" r="8" /><circle cx="75" cy="25" r="8" /><path d="M 55 55 L 25 75 C 10 85, 5 65, 5 45 C 5 15, 20 5, 40 5 C 60 5, 60 25, 60 45 L 60 70 C 60 90, 85 90, 85 70 L 85 50" /></svg>';
-    document.getElementsByTagName('head')[0].appendChild(link);
   }, []);
 
   useEffect(() => {
     const savedSessions = localStorage.getItem('my_ai_agent_sessions');
-    if (savedSessions) {
-      try {
-        const parsed = JSON.parse(savedSessions);
-        if (parsed.length > 0) {
-          setSessions(parsed);
-          setCurrentSessionId(parsed[0].id);
-        } else createNewChat();
-      } catch (e) { createNewChat(); }
-    } else createNewChat();
-    
+    if (!savedSessions) createNewChat();
     if (window.innerWidth >= 1024) setSidebarOpen(true);
   }, []);
-
-  useEffect(() => {
-    if (sessions.length > 0) localStorage.setItem('my_ai_agent_sessions', JSON.stringify(sessions));
-  }, [sessions]);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
@@ -114,9 +94,7 @@ export default function Home() {
     if (distance < -50 && touchStart < 50 && window.innerWidth < 1024) setSidebarOpen(true); 
   };
 
-  const closeSidebarOnMobile = () => {
-    if (window.innerWidth < 1024) setSidebarOpen(false);
-  };
+  const closeSidebarOnMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
   const createNewChat = () => {
     const newSession: ChatSession = { id: Date.now().toString(), title: 'New chat', messages: [], createdAt: Date.now() };
@@ -130,39 +108,40 @@ export default function Home() {
     e.stopPropagation();
     const updated = sessions.filter((s) => s.id !== id);
     setSessions(updated);
-    if (updated.length > 0) {
-      if (currentSessionId === id) setCurrentSessionId(updated[0].id);
-    } else createNewChat();
+    if (updated.length > 0) { if (currentSessionId === id) setCurrentSessionId(updated[0].id); } 
+    else createNewChat();
   };
 
-  // NEW: Reads the actual image pixels and converts to Base64
+  // UPGRADED: Reads multiple files and creates tiny thumbnail previews
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setAttachedFile(file.name);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    files.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = (reader.result as string).split(',')[1];
-        setAttachedBase64(base64String);
+        setAttachments(prev => [...prev, { name: file.name, base64: base64String }]);
       };
       reader.readAsDataURL(file);
-    }
+    });
+    e.target.value = ''; // Allow selecting the same file again
   };
 
   const sendMessage = async () => {
-    if ((!input.trim() && !attachedFile) || loading || !currentSessionId) return;
+    if ((!input.trim() && attachments.length === 0) || loading || !currentSessionId) return;
     setActiveView('chat');
     
-    let userText = input || "What is in this image?";
-    if (attachedFile) userText = `[Attached File: ${attachedFile}] ${userText}`;
+    // Grab all current images
+    const currentImages = attachments.map(a => a.base64);
     
-    const currentBase64 = attachedBase64; // Save before clearing
+    // Clean text - NO MORE UGLY [Attached File] PREFIX!
+    let userText = input || (currentImages.length > 0 ? "What is in these images?" : "");
     
     setInput('');
-    setAttachedFile(null);
-    setAttachedBase64(null); // Clear image data
+    setAttachments([]); // Clear preview area
 
-    const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText }];
+    const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText, images: currentImages }];
     let updatedTitle = currentSession?.title || 'New chat';
     if (messages.length === 0) updatedTitle = userText.length > 24 ? userText.substring(0, 24) + '...' : userText;
 
@@ -172,23 +151,15 @@ export default function Home() {
     try {
       setSessions((prev) => prev.map((s) => (s.id === currentSessionId ? { ...s, messages: [...updatedMessages, { sender: 'ai', text: '' }] } : s)));
       
-      // NEW: Send the Base64 image to the backend for the current message ONLY
-      const formattedHistory = updatedMessages.map((m, index) => {
-        const isLastMessage = index === updatedMessages.length - 1;
-        return { 
-          role: m.sender === 'user' ? 'user' : 'assistant', 
-          content: m.text,
-          ...(isLastMessage && currentBase64 ? { image: currentBase64 } : {})
-        };
-      });
+      const formattedHistory = updatedMessages.map((m) => ({ 
+        role: m.sender === 'user' ? 'user' : 'assistant', 
+        content: m.text,
+        images: m.images || []
+      }));
       
       const res = await fetch('https://my-ai-agent-8ckl.onrender.com/smart_chat', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache'
-        },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' },
         body: JSON.stringify({ messages: formattedHistory }),
       });
       if (!res.ok) throw new Error(`Server Error`);
@@ -225,10 +196,8 @@ export default function Home() {
 
   return (
     <div className="claude-root" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-      
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap');
-
         :root {
           --gesso-canvas: #FFFFFF;
           --gesso-surface: #FFFFFF;
@@ -238,223 +207,78 @@ export default function Home() {
           --gesso-divider: #E5E5E5;
           --gesso-accent: #000000;
           --gesso-on-accent: #FFFFFF;
-          
           --gesso-radius-sm: 8px;
           --gesso-radius-md: 12px;
           --gesso-radius-lg: 16px;
           --gesso-radius-full: 9999px;
-          
           --gesso-font-body: "Geist", system-ui, -apple-system, sans-serif;
           --gesso-duration-fast: 160ms;
           --gesso-easing-default: cubic-bezier(.2,.8,.2,1);
         }
-
         * { box-sizing: border-box; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; margin: 0; padding: 0; }
-        
-        .claude-root {
-          background: var(--gesso-canvas);
-          color: var(--gesso-fg);
-          font-family: var(--gesso-font-body);
-          display: flex;
-          height: 100dvh;
-          width: 100vw;
-          overflow: hidden;
-          position: fixed;
-          top: 0; left: 0;
-        }
-
+        .claude-root { background: var(--gesso-canvas); color: var(--gesso-fg); font-family: var(--gesso-font-body); display: flex; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; top: 0; left: 0; }
         button, input, textarea { font-family: inherit; color: inherit; background: none; border: none; }
-
         .ic { display: inline-block; width: 18px; height: 18px; flex-shrink: 0; stroke-width: 2; }
         .ic-sm { width: 20px; height: 20px; stroke-width: 2; }
         .ic svg { width: 100%; height: 100%; display: block; }
-
-        /* HEADER */
-        .topbar {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 16px; flex-shrink: 0; z-index: 10;
-        }
-        .menu-btn {
-          width: 40px; height: 40px; border-radius: var(--gesso-radius-full);
-          display: flex; align-items: center; justify-content: center;
-          color: var(--gesso-fg-muted); cursor: pointer; transition: background var(--gesso-duration-fast);
-        }
+        .topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; flex-shrink: 0; z-index: 10; }
+        .menu-btn { width: 40px; height: 40px; border-radius: var(--gesso-radius-full); display: flex; align-items: center; justify-content: center; color: var(--gesso-fg-muted); cursor: pointer; transition: background var(--gesso-duration-fast); }
         .menu-btn:hover { background: #F3F3F3; color: var(--gesso-fg); }
-        .menu-btn:active { transform: scale(0.94); }
-        
         .app-lockup { display: flex; align-items: center; gap: 8px; }
-        .app-logo {
-          width: 32px; height: 32px;
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-          color: var(--gesso-accent);
-        }
+        .app-logo { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--gesso-accent); }
         .app-name { font-weight: 500; font-size: 16px; color: var(--gesso-fg); letter-spacing: -0.01em; }
-
-        .new-chat-btn {
-          width: 40px; height: 40px; border-radius: var(--gesso-radius-full);
-          color: var(--gesso-fg-muted); cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          transition: background var(--gesso-duration-fast);
-        }
+        .new-chat-btn { width: 40px; height: 40px; border-radius: var(--gesso-radius-full); color: var(--gesso-fg-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background var(--gesso-duration-fast); }
         .new-chat-btn:hover { background: #F3F3F3; color: var(--gesso-fg); }
-
-        /* SIGNATURE MOMENT */
-        .signature-moment {
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          gap: 16px; padding: 24px 0; flex: 1;
-        }
-        .moment-mark {
-          color: var(--gesso-accent);
-          transition: transform 0.3s ease;
-        }
+        .signature-moment { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px 0; flex: 1; }
+        .moment-mark { color: var(--gesso-accent); transition: transform 0.3s ease; }
         .gesso-moment-pulse-answer { animation: gesso-pulse-answer 2.4s ease-in-out infinite; }
         @keyframes gesso-pulse-answer { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } }
-        
         .moment-status { font-size: 14px; font-weight: 500; color: var(--gesso-fg-muted); }
-
-        /* THREAD */
         .main-col { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
-        .thread {
-          display: flex; flex-direction: column; gap: 24px; flex: 1;
-          overflow-y: auto; padding: 16px 16px 140px 16px;
-        }
+        .thread { display: flex; flex-direction: column; gap: 24px; flex: 1; overflow-y: auto; padding: 16px 16px 140px 16px; }
         .msg-row { display: flex; width: 100%; max-width: 760px; margin: 0 auto; gap: 16px; }
         .msg-row.user { justify-content: flex-end; }
         .msg-row.ai { justify-content: flex-start; }
-
-        .avatar-ai {
-          width: 28px; height: 28px; flex-shrink: 0; margin-top: 4px;
-          color: var(--gesso-accent); display: flex; align-items: center; justify-content: center;
-        }
-
-        .bubble {
-          font-size: 15px; line-height: 1.6; letter-spacing: -0.01em;
-        }
-        .bubble.user {
-          background: #F4F4F4; color: #1A1A1A;
-          padding: 12px 18px; border-radius: var(--gesso-radius-lg);
-          max-width: 80%;
-        }
-        .bubble.ai {
-          background: transparent; color: #1A1A1A;
-          padding: 4px 0; max-width: 100%;
-        }
-        
+        .avatar-ai { width: 28px; height: 28px; flex-shrink: 0; margin-top: 4px; color: var(--gesso-accent); display: flex; align-items: center; justify-content: center; }
+        .bubble { font-size: 15px; line-height: 1.6; letter-spacing: -0.01em; }
+        .bubble.user { background: #F4F4F4; color: #1A1A1A; padding: 12px 18px; border-radius: var(--gesso-radius-lg); max-width: 80%; }
+        .bubble.ai { background: transparent; color: #1A1A1A; padding: 4px 0; max-width: 100%; }
         .markdown-body p { margin-bottom: 1rem; }
         .markdown-body p:last-child { margin-bottom: 0; }
-        .markdown-body table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.95rem; }
-        .markdown-body th, .markdown-body td { border-bottom: 1px solid var(--gesso-divider); padding: 10px 12px; text-align: left; }
-        .markdown-body th { color: var(--gesso-fg-muted); font-weight: 500; }
-        .markdown-body img { width: 100%; max-width: 400px; border-radius: var(--gesso-radius-md); margin-top: 12px; border: 1px solid var(--gesso-divider); }
-
-        /* COMPOSER */
-        .composer-wrap {
-          position: absolute; left: 0; right: 0; bottom: 0; z-index: 200;
-          padding: 12px 16px 24px;
-          background: linear-gradient(to top, #FFFFFF 70%, rgba(255,255,255,0));
-        }
+        .composer-wrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 200; padding: 12px 16px 24px; background: linear-gradient(to top, #FFFFFF 70%, rgba(255,255,255,0)); }
         .composer-inner { max-width: 760px; margin: 0 auto; }
-        
-        .attach-preview { display: flex; gap: 8px; padding-bottom: 12px; }
-        .attach-preview .thumb {
-          position: relative; padding: 8px 12px; background: #F4F4F4; border: 1px solid #E5E5E5;
-          border-radius: var(--gesso-radius-md); font-size: 13px; font-weight: 500;
-          display: flex; align-items: center; gap: 8px; color: var(--gesso-fg);
-        }
-        .attach-preview .thumb .remove {
-          background: transparent; width: 18px; height: 18px;
-          display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--gesso-fg-muted);
-        }
-        .attach-preview .thumb .remove:hover { color: var(--gesso-fg); }
-        
-        .composer {
-          display: flex; align-items: flex-end; gap: 8px;
-          background: #F4F4F4; border-radius: var(--gesso-radius-lg);
-          padding: 8px 8px 8px 16px; border: 1px solid transparent;
-          transition: border var(--gesso-duration-fast), background var(--gesso-duration-fast);
-        }
-        .composer:focus-within {
-          background: #FFFFFF; border: 1px solid #D1D1D1; box-shadow: 0 2px 6px rgba(0,0,0,0.02);
-        }
-
+        .attach-preview { display: flex; gap: 8px; padding-bottom: 12px; flex-wrap: wrap; }
+        .attach-preview .thumb { position: relative; padding: 4px; background: #F4F4F4; border: 1px solid #E5E5E5; border-radius: var(--gesso-radius-md); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .attach-preview .thumb .remove { background: #FFFFFF; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--gesso-fg); position: absolute; top: -6px; right: -6px; }
+        .composer { display: flex; align-items: flex-end; gap: 8px; background: #F4F4F4; border-radius: var(--gesso-radius-lg); padding: 8px 8px 8px 16px; border: 1px solid transparent; transition: border var(--gesso-duration-fast), background var(--gesso-duration-fast); }
+        .composer:focus-within { background: #FFFFFF; border: 1px solid #D1D1D1; box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
         .composer-icons { display: flex; gap: 4px; flex-shrink: 0; align-items: center; padding-bottom: 2px; }
-        .icon-btn {
-          width: 32px; height: 32px; border-radius: var(--gesso-radius-full);
-          display: flex; align-items: center; justify-content: center; color: var(--gesso-fg-muted);
-          transition: background var(--gesso-duration-fast), color var(--gesso-duration-fast); cursor: pointer;
-        }
+        .icon-btn { width: 32px; height: 32px; border-radius: var(--gesso-radius-full); display: flex; align-items: center; justify-content: center; color: var(--gesso-fg-muted); transition: background var(--gesso-duration-fast); cursor: pointer; }
         .icon-btn:hover { background: #E5E5E5; color: var(--gesso-fg); }
-        
-        .composer-input {
-          flex: 1; min-width: 0; font-family: var(--gesso-font-body); font-size: 15px; color: var(--gesso-fg);
-          background: transparent; border: none; outline: none; padding: 10px 4px; line-height: 1.4; align-self: center;
-        }
+        .composer-input { flex: 1; min-width: 0; font-family: var(--gesso-font-body); font-size: 15px; color: var(--gesso-fg); background: transparent; border: none; outline: none; padding: 10px 4px; line-height: 1.4; align-self: center; }
         .composer-input::placeholder { color: var(--gesso-fg-muted); }
-        
-        .send-btn {
-          width: 36px; height: 36px; border-radius: var(--gesso-radius-full);
-          background: var(--gesso-accent); color: var(--gesso-on-accent);
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer;
-          transition: background var(--gesso-duration-fast); margin-bottom: 2px;
-        }
-        .send-btn:hover { background: #333333; }
+        .send-btn { width: 36px; height: 36px; border-radius: var(--gesso-radius-full); background: var(--gesso-accent); color: var(--gesso-on-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; margin-bottom: 2px; }
         .send-btn:disabled { background: #E5E5E5; color: #999999; cursor: not-allowed; }
-
-        /* DRAWER */
-        .drawer-scrim {
-          position: fixed; inset: 0; z-index: 190; background: rgba(0,0,0,0.2);
-          opacity: 0; pointer-events: none; transition: opacity 220ms var(--gesso-easing-default);
-        }
+        .drawer-scrim { position: fixed; inset: 0; z-index: 190; background: rgba(0,0,0,0.2); opacity: 0; pointer-events: none; transition: opacity 220ms var(--gesso-easing-default); }
         .drawer-scrim.open { opacity: 1; pointer-events: auto; }
-        
-        .drawer {
-          position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; width: 280px;
-          background: var(--gesso-surface-recessed); border-right: 1px solid var(--gesso-divider);
-          padding: 24px 16px; display: flex; flex-direction: column; gap: 20px;
-          transform: translateX(-100%); transition: transform 260ms var(--gesso-easing-default);
-        }
-        @media (min-width: 1024px) {
-          .drawer { position: relative; transform: translateX(0); flex-shrink: 0; }
-          .drawer-scrim { display: none !important; }
-        }
+        .drawer { position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; width: 280px; background: var(--gesso-surface-recessed); border-right: 1px solid var(--gesso-divider); padding: 24px 16px; display: flex; flex-direction: column; gap: 20px; transform: translateX(-100%); transition: transform 260ms var(--gesso-easing-default); }
+        @media (min-width: 1024px) { .drawer { position: relative; transform: translateX(0); flex-shrink: 0; } .drawer-scrim { display: none !important; } }
         .drawer.open { transform: translateX(0); }
-        
-        .drawer-new {
-          display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--gesso-radius-md);
-          background: transparent; color: var(--gesso-fg); font-size: 14px; font-weight: 500; cursor: pointer;
-          transition: background var(--gesso-duration-fast); width: 100%; text-align: left; border: 1px solid transparent;
-        }
+        .drawer-new { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--gesso-radius-md); background: transparent; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; text-align: left; }
         .drawer-new:hover { background: #E5E5E5; }
-        
-        .drawer-search-wrap {
-          display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--gesso-radius-md);
-          background: #FFFFFF; border: 1px solid var(--gesso-divider); color: var(--gesso-fg-muted); font-size: 14px;
-        }
-        .drawer-search-wrap input { flex: 1; background: transparent; outline: none; border: none; font-size: 14px; color: var(--gesso-fg); }
-        
+        .drawer-search-wrap { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--gesso-radius-md); background: #FFFFFF; border: 1px solid var(--gesso-divider); color: var(--gesso-fg-muted); }
+        .drawer-search-wrap input { flex: 1; outline: none; border: none; font-size: 14px; }
         .drawer-nav { display: flex; flex-direction: column; gap: 2px; }
-        .drawer-item {
-          display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--gesso-radius-md);
-          color: var(--gesso-fg); font-size: 14px; cursor: pointer; text-align: left; width: 100%;
-          transition: background var(--gesso-duration-fast);
-        }
+        .drawer-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--gesso-radius-md); font-size: 14px; cursor: pointer; text-align: left; width: 100%; }
         .drawer-item:hover { background: #EBEBEB; }
         .drawer-item[aria-current="true"] { background: #E5E5E5; font-weight: 500; }
-        .drawer-item .ic { color: var(--gesso-fg-muted); }
-
         .drawer-section-label { font-size: 12px; color: var(--gesso-fg-muted); font-weight: 500; padding: 16px 12px 4px; }
-        
         .drawer-history { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; flex: 1; margin-right: -8px; padding-right: 8px; }
-        .hist-pill {
-          display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--gesso-radius-md);
-          background: transparent; font-size: 14px; color: var(--gesso-fg); cursor: pointer;
-          transition: background var(--gesso-duration-fast); width: 100%; text-align: left;
-        }
+        .hist-pill { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--gesso-radius-md); font-size: 14px; cursor: pointer; width: 100%; text-align: left; }
         .hist-pill:hover { background: #EBEBEB; }
         .hist-pill .title-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .hist-pill button { opacity: 0; cursor: pointer; padding: 4px; color: var(--gesso-fg-muted); transition: opacity 0.2s; }
+        .hist-pill button { opacity: 0; cursor: pointer; padding: 4px; color: var(--gesso-fg-muted); }
         .hist-pill:hover button { opacity: 1; }
-        .hist-pill button:hover { color: #000; }
       `}</style>
 
       <div className={`drawer-scrim ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
@@ -496,7 +320,6 @@ export default function Home() {
       </aside>
 
       <div className="main-col">
-        
         <header className="topbar">
           <div className="app-lockup">
             <button className="menu-btn" onClick={() => setSidebarOpen(true)}>
@@ -517,9 +340,7 @@ export default function Home() {
                 <div className={`moment-mark ${loading ? 'gesso-moment-pulse-answer' : ''}`}>
                   <AILogo size={72} />
                 </div>
-                <div className="moment-status" style={{ opacity: loading ? 1 : 0, transition: 'opacity 0.3s' }}>
-                  Thinking...
-                </div>
+                <div className="moment-status" style={{ opacity: loading ? 1 : 0, transition: 'opacity 0.3s' }}>Thinking...</div>
               </div>
             ) : (
               messages.map((msg, index) => (
@@ -528,10 +349,20 @@ export default function Home() {
                     <div className="avatar-ai"><AILogo size={28} /></div>
                   )}
                   <div className={`bubble ${msg.sender} markdown-body`}>
+                    
+                    {/* --- THE UPGRADE: SHOWING THE ACTUAL PHOTOS IN CHAT --- */}
+                    {msg.images && msg.images.length > 0 && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: msg.text ? '12px' : '0' }}>
+                        {msg.images.map((imgBase64, i) => (
+                          <img key={i} src={`data:image/jpeg;base64,${imgBase64}`} alt="Uploaded" style={{ width: '160px', height: '160px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #E5E5E5', margin: 0 }} />
+                        ))}
+                      </div>
+                    )}
+
                     {msg.sender === 'ai' && msg.text === '' && loading ? (
                       <span style={{ opacity: 0.5, fontStyle: 'italic' }}>Generating response...</span>
                     ) : (
-                      <ReactMarkdown>{msg.text}</ReactMarkdown>
+                      msg.text && <ReactMarkdown>{msg.text}</ReactMarkdown>
                     )}
                   </div>
                 </div>
@@ -550,513 +381,68 @@ export default function Home() {
           <div className="composer-wrap">
             <div className="composer-inner">
               
-              {attachedFile && (
+              {/* UPGRADED: Composer Preview shows tiny thumbnails before you hit send! */}
+              {attachments.length > 0 && (
                 <div className="attach-preview">
-                  <div className="thumb">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{width: 14, height: 14}}><path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    {attachedFile}
-                    {/* NEW: Make sure we delete the Base64 data if the user removes the file! */}
-                    <button className="remove" onClick={() => { setAttachedFile(null); setAttachedBase64(null); }}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{width: 12, height: 12, strokeWidth: 2.5}}><path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                  </div>
+                  {attachments.map((att, idx) => (
+                    <div className="thumb" key={idx}>
+                      <img src={`data:image/jpeg;base64,${att.base64}`} style={{width: '40px', height: '40px', objectFit: 'cover', borderRadius: '6px'}}/>
+                      <button className="remove" onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{width: 12, height: 12, strokeWidth: 2.5}}><path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18M6 6l12 12"/></svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               
               <div className="composer">
-                {/* Dedicated Hidden Inputs */}
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  ref={cameraInputRef}
-                  onChange={handleFileUpload}
-                  style={{ display: "none" }}
-                />
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  ref={photoInputRef}
-                  onChange={handleFileUpload}
-                  style={{ display: "none" }}
-                />
-                <input
-                  type="file"
-                  accept="*/*"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  style={{ display: "none" }}
-                />
+                {/* UPGRADED: Inputs now allow multiple files using "multiple" keyword */}
+                <input type="file" multiple accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
+                <input type="file" multiple accept="image/*,video/*" ref={photoInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
+                <input type="file" multiple accept="*/*" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
 
-                {/* --- CLAUDE-STYLE "ADD TO CHAT" BOTTOM SHEET --- */}
                 {showMenu && (
-                  <div
-                    style={{
-                      position: "fixed",
-                      inset: 0,
-                      backgroundColor: "rgba(0, 0, 0, 0.4)",
-                      zIndex: 999,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "flex-end",
-                    }}
-                    onClick={() => setShowMenu(false)}
-                  >
-                    <div
-                      style={{
-                        backgroundColor: "#FFFFFF",
-                        borderTopLeftRadius: "32px",
-                        borderTopRightRadius: "32px",
-                        padding: "16px 20px 36px 20px",
-                        width: "100%",
-                        maxWidth: "540px",
-                        margin: "0 auto",
-                        boxShadow: "0 -10px 40px rgba(0,0,0,0.15)",
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {/* Pill Drag Handle */}
-                      <div
-                        style={{
-                          width: "40px",
-                          height: "4px",
-                          backgroundColor: "#D1D5DB",
-                          borderRadius: "9999px",
-                          margin: "0 auto 12px auto",
-                        }}
-                      />
-
-                      {/* Header */}
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          marginBottom: "20px",
-                          position: "relative",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setShowMenu(false)}
-                          style={{
-                            padding: "6px",
-                            borderRadius: "50%",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#1F2937",
-                            background: "transparent",
-                            border: "none"
-                          }}
-                        >
-                          <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                          >
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                          </svg>
+                  <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", zIndex: 999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }} onClick={() => setShowMenu(false)}>
+                    <div style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: "32px", borderTopRightRadius: "32px", padding: "16px 20px 36px 20px", width: "100%", maxWidth: "540px", margin: "0 auto", boxShadow: "0 -10px 40px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ width: "40px", height: "4px", backgroundColor: "#D1D5DB", borderRadius: "9999px", margin: "0 auto 12px auto" }} />
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", position: "relative" }}>
+                        <button type="button" onClick={() => setShowMenu(false)} style={{ padding: "6px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
-                        <span
-                          style={{
-                            fontSize: "17px",
-                            fontWeight: "600",
-                            color: "#111827",
-                            position: "absolute",
-                            left: "50%",
-                            transform: "translateX(-50%)",
-                          }}
-                        >
-                          Add to chat
-                        </span>
+                        <span style={{ fontSize: "17px", fontWeight: "600", color: "#111827", position: "absolute", left: "50%", transform: "translateX(-50%)" }}>Add to chat</span>
                         <div style={{ width: "28px" }} />
                       </div>
-
-                      {/* 3 Top Action Cards (Camera, Photos, Files) */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "12px",
-                          marginBottom: "20px",
-                        }}
-                      >
-                        {/* Camera Card */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowMenu(false);
-                            cameraInputRef.current?.click();
-                          }}
-                          style={{
-                            backgroundColor: "#F9FAFB",
-                            border: "1px solid #F3F4F6",
-                            borderRadius: "20px",
-                            padding: "16px 8px",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: "10px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: "48px",
-                              height: "48px",
-                              borderRadius: "50%",
-                              backgroundColor: "#E5E7EB",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#1F2937",
-                            }}
-                          >
-                            <svg
-                              width="22"
-                              height="22"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                            >
-                              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                              <circle cx="12" cy="13" r="4"></circle>
-                            </svg>
-                          </div>
-                          <span
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              color: "#111827",
-                            }}
-                          >
-                            Camera
-                          </span>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+                        <button type="button" onClick={() => { setShowMenu(false); cameraInputRef.current?.click(); }} style={{ backgroundColor: "#F9FAFB", border: "1px solid #F3F4F6", borderRadius: "20px", padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                          <div style={{ width: "48px", height: "48px", borderRadius: "50%", backgroundColor: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></div>
+                          <span style={{ fontSize: "14px", fontWeight: "500", color: "#111827" }}>Camera</span>
                         </button>
-
-                        {/* Photos Card */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowMenu(false);
-                            photoInputRef.current?.click();
-                          }}
-                          style={{
-                            backgroundColor: "#F9FAFB",
-                            border: "1px solid #F3F4F6",
-                            borderRadius: "20px",
-                            padding: "16px 8px",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: "10px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: "48px",
-                              height: "48px",
-                              borderRadius: "50%",
-                              backgroundColor: "#E5E7EB",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#1F2937",
-                            }}
-                          >
-                            <svg
-                              width="22"
-                              height="22"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                            >
-                              <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
-                              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                              <polyline points="21 15 16 10 5 21"></polyline>
-                            </svg>
-                          </div>
-                          <span
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              color: "#111827",
-                            }}
-                          >
-                            Photos
-                          </span>
+                        <button type="button" onClick={() => { setShowMenu(false); photoInputRef.current?.click(); }} style={{ backgroundColor: "#F9FAFB", border: "1px solid #F3F4F6", borderRadius: "20px", padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                          <div style={{ width: "48px", height: "48px", borderRadius: "50%", backgroundColor: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+                          <span style={{ fontSize: "14px", fontWeight: "500", color: "#111827" }}>Photos</span>
                         </button>
-
-                        {/* Files Card */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowMenu(false);
-                            fileInputRef.current?.click();
-                          }}
-                          style={{
-                            backgroundColor: "#F9FAFB",
-                            border: "1px solid #F3F4F6",
-                            borderRadius: "20px",
-                            padding: "16px 8px",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: "10px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: "48px",
-                              height: "48px",
-                              borderRadius: "50%",
-                              backgroundColor: "#E5E7EB",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#1F2937",
-                            }}
-                          >
-                            <svg
-                              width="22"
-                              height="22"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                            >
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                              <polyline points="14 2 14 8 20 8"></polyline>
-                              <line x1="12" y1="18" x2="12" y2="12"></line>
-                              <line x1="9" y1="15" x2="12" y2="12"></line>
-                              <line x1="15" y1="15" x2="12" y2="12"></line>
-                            </svg>
-                          </div>
-                          <span
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              color: "#111827",
-                            }}
-                          >
-                            Files
-                          </span>
+                        <button type="button" onClick={() => { setShowMenu(false); fileInputRef.current?.click(); }} style={{ backgroundColor: "#F9FAFB", border: "1px solid #F3F4F6", borderRadius: "20px", padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                          <div style={{ width: "48px", height: "48px", borderRadius: "50%", backgroundColor: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="12" y2="12"></line><line x1="15" y1="15" x2="12" y2="12"></line></svg></div>
+                          <span style={{ fontSize: "14px", fontWeight: "500", color: "#111827" }}>Files</span>
                         </button>
                       </div>
-
-                      {/* List Items */}
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                        }}
-                      >
-                        {/* Web Search Row */}
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "12px 14px",
-                            borderRadius: "16px",
-                            backgroundColor: "#F9FAFB",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "14px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: "36px",
-                                height: "36px",
-                                borderRadius: "50%",
-                                backgroundColor: "#E5E7EB",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#1F2937",
-                              }}
-                            >
-                              <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="2" y1="12" x2="22" y2="12"></line>
-                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                              </svg>
-                            </div>
-                            <span
-                              style={{
-                                fontSize: "15px",
-                                fontWeight: "500",
-                                color: "#111827",
-                              }}
-                            >
-                              Web search
-                            </span>
-                          </div>
-                          {/* Toggle Switch */}
-                          <div
-                            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                            style={{
-                              width: "48px",
-                              height: "28px",
-                              backgroundColor: webSearchEnabled ? "#2563EB" : "#D1D5DB",
-                              borderRadius: "9999px",
-                              padding: "2px",
-                              cursor: "pointer",
-                              transition: "background-color 0.2s",
-                              display: "flex",
-                              alignItems: "center",
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: "24px",
-                                height: "24px",
-                                backgroundColor: "#FFFFFF",
-                                borderRadius: "50%",
-                                transform: webSearchEnabled
-                                  ? "translateX(20px)"
-                                  : "translateX(0px)",
-                                transition: "transform 0.2s",
-                                boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Add to Project Row */}
-                        <div
-                          onClick={() => alert("Projects feature coming soon!")}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "12px 14px",
-                            borderRadius: "16px",
-                            backgroundColor: "#F9FAFB",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "14px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: "36px",
-                                height: "36px",
-                                borderRadius: "50%",
-                                backgroundColor: "#E5E7EB",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#1F2937",
-                              }}
-                            >
-                              <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                              </svg>
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                textAlign: "left",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontSize: "15px",
-                                  fontWeight: "500",
-                                  color: "#111827",
-                                }}
-                              >
-                                Add to project
-                              </span>
-                              <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                                None
-                              </span>
-                            </div>
-                          </div>
-                          <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#9CA3AF"
-                            strokeWidth="2"
-                          >
-                            <polyline points="9 18 15 12 9 6"></polyline>
-                          </svg>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: "16px", backgroundColor: "#F9FAFB" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}><div style={{ width: "36px", height: "36px", borderRadius: "50%", backgroundColor: "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></div><span style={{ fontSize: "15px", fontWeight: "500", color: "#111827" }}>Web search</span></div>
+                          <div onClick={() => setWebSearchEnabled(!webSearchEnabled)} style={{ width: "48px", height: "28px", backgroundColor: webSearchEnabled ? "#2563EB" : "#D1D5DB", borderRadius: "9999px", padding: "2px", cursor: "pointer", transition: "background-color 0.2s", display: "flex", alignItems: "center" }}><div style={{ width: "24px", height: "24px", backgroundColor: "#FFFFFF", borderRadius: "50%", transform: webSearchEnabled ? "translateX(20px)" : "translateX(0px)", transition: "transform 0.2s", boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }} /></div>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* The '+' Plus Button */}
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setShowMenu(true)}
-                  style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px" }}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    style={{ width: "22px", height: "22px", strokeWidth: 2 }}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 5v14M5 12h14"
-                    />
-                  </svg>
+                <button type="button" className="icon-btn" onClick={() => setShowMenu(true)} style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px" }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ width: "22px", height: "22px", strokeWidth: 2 }}><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" /></svg>
                 </button>    
                 
-                <input 
-                  className="composer-input"
-                  type="text" 
-                  value={input} 
-                  onChange={(e) => setInput(e.target.value)} 
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} 
-                  placeholder="How can I help you today?" 
-                />
+                <input className="composer-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="How can I help you today?" />
                 
-                <button className="send-btn" onClick={sendMessage} disabled={(!input.trim() && !attachedFile) || loading}>
+                <button className="send-btn" onClick={sendMessage} disabled={(!input.trim() && attachments.length === 0) || loading}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="ic" style={{ width: 18, height: 18 }}><path strokeLinecap="round" strokeLinejoin="round" d="m5 12l7-7l7 7m-7 7V5"/></svg>
                 </button>
               </div>
