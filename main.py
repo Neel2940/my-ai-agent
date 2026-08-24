@@ -22,10 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# UPGRADED: Now accepts a list of multiple images
 class MessageItem(BaseModel):
     role: str
     content: str
-    image: str = None  # NEW: Now accepts Base64 image data from frontend!
+    images: list[str] = [] 
 
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
@@ -79,18 +80,19 @@ def extract_clean_subject(text: str) -> str:
 
 @app.get("/")
 def home():
-    return {"status": "Opus AI API Online - Vision Enabled."}
+    return {"status": "Opus AI API Online - Multi-Vision Enabled."}
 
 @app.post("/smart_chat")
 def smart_chat(req: ChatRequest):
     if not req.messages:
         return {"response": "No message history provided."}
 
-    # Grab the latest message data
     latest_msg_obj = req.messages[-1]
     latest_msg = latest_msg_obj.content.strip()
     latest_msg_lower = latest_msg.lower()
-    has_image = bool(latest_msg_obj.image)
+    
+    # Check if the user sent any images
+    has_images = len(latest_msg_obj.images) > 0
     
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
@@ -100,30 +102,27 @@ def smart_chat(req: ChatRequest):
     if not client:
         return StreamingResponse(iter(["⚠️ Error: GROQ_API_KEY is missing from your server environment."]), media_type="text/event-stream")
 
-    # --- ROUTE 0: VISION AI (If user uploaded a photo) ---
-    if has_image:
+    # --- ROUTE 0: VISION AI ---
+    if has_images:
         def generate_vision_chat():
             try:
-                # Use Groq's dedicated Vision Model
-                VISION_MODEL = "llama-3.2-11b-vision-preview"
+                # FIXED: Upgraded to Groq's active 90b Vision Model!
+                VISION_MODEL = "llama-3.2-90b-vision-preview"
                 
-                # We have to reformat the history so the Vision Model can read the image code
                 vision_history = []
                 for m in req.messages:
-                    if m.image:
-                        vision_history.append({
-                            "role": m.role,
-                            "content": [
-                                {"type": "text", "text": m.content},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{m.image}"}}
-                            ]
-                        })
+                    if getattr(m, 'images', None) and len(m.images) > 0:
+                        content_array = [{"type": "text", "text": m.content}]
+                        # Add every image the user attached
+                        for img in m.images:
+                            content_array.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
+                        vision_history.append({"role": m.role, "content": content_array})
                     else:
                         vision_history.append({"role": m.role, "content": m.content})
                 
                 stream = client.chat.completions.create(
                     model=VISION_MODEL,
-                    messages=[{"role": "system", "content": "You are Opus AI, a brilliant vision assistant. Analyze the image carefully and answer the user's request accurately."}] + vision_history,
+                    messages=[{"role": "system", "content": "You are Opus AI. Analyze the uploaded image(s) carefully and assist the user."}] + vision_history,
                     temperature=0.3,
                     stream=True
                 )
@@ -132,7 +131,7 @@ def smart_chat(req: ChatRequest):
                     if chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
             except Exception as e:
-                yield f"I apologize, but I had trouble analyzing that image. (Error: {str(e)})"
+                yield f"I apologize, but I had trouble analyzing the images. (Error: {str(e)})"
                 
         return StreamingResponse(
             generate_vision_chat(),
@@ -140,18 +139,12 @@ def smart_chat(req: ChatRequest):
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"}
         )
 
-    # --- ROUTE 1 & 2: TEXT & SEARCH AI (If no photo was uploaded) ---
-    GUARANTEED_MODELS = [
-        "llama-3.3-70b-versatile",
-        "openai/gpt-oss-20b",
-        "llama-3.1-8b-instant"
-    ]
+    # --- ROUTE 1 & 2: TEXT & SEARCH AI ---
+    GUARANTEED_MODELS = ["llama-3.3-70b-versatile", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
     MODEL_NAME = "llama-3.3-70b-versatile" 
-    
     try:
         active_models_data = client.models.list().data
         live_model_ids = [m.id for m in active_models_data]
-        
         for g_model in GUARANTEED_MODELS:
             if g_model in live_model_ids:
                 MODEL_NAME = g_model
@@ -161,7 +154,6 @@ def smart_chat(req: ChatRequest):
 
     history = [{"role": m.role, "content": m.content} for m in req.messages]
 
-    # Image Search Route
     if bool(re.search(r'\b(image|images|photo|photos|picture|pictures|pic|pics)\b', latest_msg_lower)) and not bool(re.search(r'\b(age|squad|team|stats|who|what|where)\b', latest_msg_lower)):
         clean_search = extract_clean_subject(latest_msg)
         img_list = []
@@ -177,7 +169,6 @@ def smart_chat(req: ChatRequest):
         def generate_images(): yield f"Here are pictures of {clean_search.title()}:\n\n{combined}"
         return StreamingResponse(generate_images(), media_type="text/event-stream")
 
-    # Text & Fact Search Route
     else:
         def generate_universal_chat():
             try:
@@ -185,7 +176,7 @@ def smart_chat(req: ChatRequest):
                 try:
                     opt_res = client.chat.completions.create(
                         model=MODEL_NAME,
-                        messages=[{"role": "user", "content": f"Convert this message into a short Google search query to find any real-world facts, dates, statistics, or current events. If it is just a casual greeting (like 'hi'), reply exactly with 'NO_SEARCH'. Message: {latest_msg}"}],
+                        messages=[{"role": "user", "content": f"Convert this message into a short Google search query. If casual, reply 'NO_SEARCH'. Message: {latest_msg}"}],
                         temperature=0.0
                     )
                     search_term = opt_res.choices[0].message.content.replace('"', '').strip().split('\n')[0]
@@ -218,14 +209,9 @@ def smart_chat(req: ChatRequest):
                     if context_data.strip():
                         search_status_note = context_data
                     else:
-                        search_status_note = "SYSTEM INSTRUCTION: Live search is currently blocked. Provide the best possible answer from your internal training data."
+                        search_status_note = "Live search is currently blocked. Provide the best possible answer."
 
-                system_prompt = (
-                    f"Current Date: {current_date}.\n"
-                    "You are Opus AI, a brilliant, highly reliable, and intelligent AI assistant.\n"
-                    "If internet data or system instructions are provided below, follow them carefully.\n"
-                    f"\n--- INTERNET DATA & INSTRUCTIONS ---\n{search_status_note}"
-                )
+                system_prompt = f"Current Date: {current_date}.\nYou are Opus AI.\n--- INTERNET DATA ---\n{search_status_note}"
 
                 stream = client.chat.completions.create(
                     model=MODEL_NAME,
@@ -233,19 +219,10 @@ def smart_chat(req: ChatRequest):
                     temperature=0.4,
                     stream=True
                 )
-
                 for chunk in stream:
                     if chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
             except Exception as e:
-                yield "I apologize, but I am experiencing a temporary network issue. Please try your request again in a moment."
+                yield "I apologize, but I am experiencing a temporary network issue. Please try again."
 
-        return StreamingResponse(
-            generate_universal_chat(), 
-            media_type="text/event-stream",
-            headers={
-                "X-Accel-Buffering": "no",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive"
-            }
-        )
+        return StreamingResponse(generate_universal_chat(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"})
