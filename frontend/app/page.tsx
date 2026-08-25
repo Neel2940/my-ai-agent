@@ -123,15 +123,46 @@ export default function Home() {
     else createNewChat();
   };
 
+  // UPGRADED: Resizes and compresses images to prevent 413 Server Errors!
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     
     files.forEach(file => {
+      // The current AI model only supports images, not videos
+      if (file.type.startsWith('video/')) {
+        alert("Video analysis is not supported by this AI model yet. Please upload an image!");
+        return;
+      }
+
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = (reader.result as string).split(',')[1];
-        setAttachments(prev => [...prev, { name: file.name, base64: base64String }]);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Shrink the image if it is too large
+          const MAX_SIZE = 1200;
+          if (width > height && width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          } else if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Compress to a lightweight JPEG (70% quality)
+          const base64String = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+          setAttachments(prev => [...prev, { name: file.name, base64: base64String }]);
+        };
+        img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     });
