@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 interface Message {
   sender: 'user' | 'ai';
   text: string;
-  images?: string[]; // UPGRADED: Stores actual image arrays to show in chat!
+  images?: string[]; 
 }
 
 interface ChatSession {
@@ -25,7 +25,6 @@ export default function Home() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   
-  // UPGRADED: Now handles multiple image attachments
   const [attachments, setAttachments] = useState<{name: string, base64: string}[]>([]); 
   
   const [showMenu, setShowMenu] = useState(false);
@@ -51,14 +50,32 @@ export default function Home() {
         setSessions(JSON.parse(savedChats));
         if (savedCurrentId) setCurrentSessionId(savedCurrentId);
       } catch (e) {}
+    } else {
+        const newSession: ChatSession = { id: Date.now().toString(), title: 'New chat', messages: [], createdAt: Date.now() };
+        setSessions([newSession]);
+        setCurrentSessionId(newSession.id);
     }
     setIsLoaded(true);
+    if (window.innerWidth >= 1024) setSidebarOpen(true);
   }, []);
 
+  // --- THE FIX: STRIPPING IMAGES FROM MEMORY TO PREVENT BROWSER CRASH ---
   useEffect(() => {
     if (isLoaded && !loading) {
-      localStorage.setItem("opus_sessions", JSON.stringify(sessions));
-      localStorage.setItem("opus_current_session", currentSessionId);
+      const safeSessions = sessions.map(session => ({
+        ...session,
+        messages: session.messages.map(msg => ({
+          sender: msg.sender,
+          text: msg.text
+          // We completely remove 'images' here so it doesn't crash the 5MB browser storage!
+        }))
+      }));
+      try {
+        localStorage.setItem("opus_sessions", JSON.stringify(safeSessions));
+        localStorage.setItem("opus_current_session", currentSessionId);
+      } catch (e) {
+        console.error("Storage error:", e);
+      }
     }
   }, [sessions, currentSessionId, isLoaded, loading]);
 
@@ -67,12 +84,6 @@ export default function Home() {
 
   useEffect(() => {
     document.title = "Opus AI";
-  }, []);
-
-  useEffect(() => {
-    const savedSessions = localStorage.getItem('my_ai_agent_sessions');
-    if (!savedSessions) createNewChat();
-    if (window.innerWidth >= 1024) setSidebarOpen(true);
   }, []);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
@@ -112,7 +123,6 @@ export default function Home() {
     else createNewChat();
   };
 
-  // UPGRADED: Reads multiple files and creates tiny thumbnail previews
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -125,21 +135,18 @@ export default function Home() {
       };
       reader.readAsDataURL(file);
     });
-    e.target.value = ''; // Allow selecting the same file again
+    e.target.value = ''; 
   };
 
   const sendMessage = async () => {
     if ((!input.trim() && attachments.length === 0) || loading || !currentSessionId) return;
     setActiveView('chat');
     
-    // Grab all current images
     const currentImages = attachments.map(a => a.base64);
-    
-    // Clean text - NO MORE UGLY [Attached File] PREFIX!
     let userText = input || (currentImages.length > 0 ? "What is in these images?" : "");
     
     setInput('');
-    setAttachments([]); // Clear preview area
+    setAttachments([]); 
 
     const updatedMessages: Message[] = [...messages, { sender: 'user', text: userText, images: currentImages }];
     let updatedTitle = currentSession?.title || 'New chat';
@@ -350,7 +357,6 @@ export default function Home() {
                   )}
                   <div className={`bubble ${msg.sender} markdown-body`}>
                     
-                    {/* --- THE UPGRADE: SHOWING THE ACTUAL PHOTOS IN CHAT --- */}
                     {msg.images && msg.images.length > 0 && (
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: msg.text ? '12px' : '0' }}>
                         {msg.images.map((imgBase64, i) => (
@@ -381,7 +387,6 @@ export default function Home() {
           <div className="composer-wrap">
             <div className="composer-inner">
               
-              {/* UPGRADED: Composer Preview shows tiny thumbnails before you hit send! */}
               {attachments.length > 0 && (
                 <div className="attach-preview">
                   {attachments.map((att, idx) => (
@@ -396,7 +401,6 @@ export default function Home() {
               )}
               
               <div className="composer">
-                {/* UPGRADED: Inputs now allow multiple files using "multiple" keyword */}
                 <input type="file" multiple accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
                 <input type="file" multiple accept="image/*,video/*" ref={photoInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
                 <input type="file" multiple accept="*/*" ref={fileInputRef} onChange={handleFileUpload} style={{ display: "none" }} />
@@ -406,7 +410,7 @@ export default function Home() {
                     <div style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: "32px", borderTopRightRadius: "32px", padding: "16px 20px 36px 20px", width: "100%", maxWidth: "540px", margin: "0 auto", boxShadow: "0 -10px 40px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ width: "40px", height: "4px", backgroundColor: "#D1D5DB", borderRadius: "9999px", margin: "0 auto 12px auto" }} />
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", position: "relative" }}>
-                        <button type="button" onClick={() => setShowMenu(false)} style={{ padding: "6px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937" }}>
+                        <button type="button" onClick={() => setShowMenu(false)} style={{ padding: "6px", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#1F2937", background: "transparent", border: "none" }}>
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
                         <span style={{ fontSize: "17px", fontWeight: "600", color: "#111827", position: "absolute", left: "50%", transform: "translateX(-50%)" }}>Add to chat</span>
