@@ -72,7 +72,7 @@ def smart_chat(req: ChatRequest):
                         )
                 
                 stream = client.models.generate_content_stream(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents=gemini_contents,
                 )
                 
@@ -120,7 +120,7 @@ def smart_chat(req: ChatRequest):
                 gemini_history.append(types.Content(role="user", parts=[types.Part.from_text(text=latest_msg)]))
                 
                 stream = client.models.generate_content_stream(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents=gemini_history,
                 )
                 
