@@ -87,7 +87,7 @@ def smart_chat(request: Request, req: ChatRequest):
         )
 
     # Use the stable production Flash model
-    ACTIVE_MODEL = "gemini-2.0-flash"
+    ACTIVE_MODEL = "gemini-3.6-flash"
 
     # --- ROUTE 0: VISION AI ---
     if has_images:
